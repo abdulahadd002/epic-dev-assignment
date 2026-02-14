@@ -158,6 +158,7 @@ function analyzeCommits(commits, detailedCommits, files, fileTypeCounts) {
   const hourlyData = Array(24).fill(0);
   const weekdayData = Array(7).fill(0);
   const commitDates = [];
+  const commitSizes = [];
 
   commits.forEach(commit => {
     const date = new Date(commit.commit.author.date);
@@ -187,6 +188,8 @@ function analyzeCommits(commits, detailedCommits, files, fileTypeCounts) {
     if (commit.stats) {
       totalLinesAdded += commit.stats.additions;
       totalLinesDeleted += commit.stats.deletions;
+      const commitSize = commit.stats.additions + commit.stats.deletions;
+      commitSizes.push(commitSize);
     }
   });
 
@@ -225,6 +228,34 @@ function analyzeCommits(commits, detailedCommits, files, fileTypeCounts) {
     consistencyScore
   );
 
+  // Calculate commit size distribution
+  const sizeRanges = [
+    { range: "0-50", count: 0 },
+    { range: "51-100", count: 0 },
+    { range: "101-200", count: 0 },
+    { range: "201-500", count: 0 },
+    { range: "500+", count: 0 },
+  ];
+
+  commitSizes.forEach((size) => {
+    if (size <= 50) sizeRanges[0].count++;
+    else if (size <= 100) sizeRanges[1].count++;
+    else if (size <= 200) sizeRanges[2].count++;
+    else if (size <= 500) sizeRanges[3].count++;
+    else sizeRanges[4].count++;
+  });
+
+  // Calculate consistency timeline (days between commits)
+  const sortedDates = commitDates.sort((a, b) => a - b);
+  const consistencyTimeline = [];
+  for (let i = 0; i < Math.min(sortedDates.length - 1, 30); i++) {
+    const diffDays = (sortedDates[i + 1].getTime() - sortedDates[i].getTime()) / (1000 * 60 * 60 * 24);
+    consistencyTimeline.push({
+      commit: `#${i + 1}`,
+      days: Number.isFinite(diffDays) ? Number(diffDays.toFixed(1)) : 0,
+    });
+  }
+
   return {
     totalCommits: commits.length,
     onTimeCount,
@@ -247,7 +278,9 @@ function analyzeCommits(commits, detailedCommits, files, fileTypeCounts) {
     weekdayData: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => ({
       day,
       commits: weekdayData[i]
-    }))
+    })),
+    commitSizeDistribution: sizeRanges,
+    consistencyTimeline: consistencyTimeline.length ? consistencyTimeline : [{ commit: "#1", days: 0 }]
   };
 }
 
