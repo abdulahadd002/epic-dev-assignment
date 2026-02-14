@@ -18,6 +18,7 @@ export default function Step4_Assignment() {
   const [sortBy, setSortBy] = useState('epic'); // epic, points, developer, confidence
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedScore, setExpandedScore] = useState(null);
+  const [expandedStories, setExpandedStories] = useState(null);
 
   const handleAutoAssign = async () => {
     setLoading(true);
@@ -459,6 +460,13 @@ export default function Step4_Assignment() {
                       </div>
                     </div>
                     <button
+                      onClick={() => setExpandedStories(expandedStories === assignment.epic.epic_id ? null : assignment.epic.epic_id)}
+                      className="px-3 py-1 text-xs bg-indigo-100 dark:bg-indigo-900 hover:bg-indigo-200 dark:hover:bg-indigo-800
+                               text-indigo-700 dark:text-indigo-300 rounded transition-colors"
+                    >
+                      {expandedStories === assignment.epic.epic_id ? 'Hide Stories' : 'View Stories'}
+                    </button>
+                    <button
                       onClick={() => setExpandedScore(expandedScore === assignment.epic.epic_id ? null : assignment.epic.epic_id)}
                       className="px-3 py-1 text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500
                                text-gray-700 dark:text-gray-300 rounded transition-colors"
@@ -481,6 +489,56 @@ export default function Step4_Assignment() {
                         ))}
                     </select>
                   </div>
+
+                  {/* User Stories */}
+                  {expandedStories === assignment.epic.epic_id && assignment.epic.user_stories && (
+                    <div className="mt-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                        <span>📋</span>
+                        User Stories ({assignment.epic.user_stories.length})
+                      </div>
+                      <div className="space-y-3">
+                        {assignment.epic.user_stories.map((story, idx) => (
+                          <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-start gap-2">
+                              <span className="px-2 py-0.5 text-xs font-medium bg-indigo-100 dark:bg-indigo-900
+                                             text-indigo-700 dark:text-indigo-300 rounded">
+                                {story.story_id || `US-${idx + 1}`}
+                              </span>
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                  {story.user_story || story.title || 'Untitled Story'}
+                                </div>
+                                {story.story_points && (
+                                  <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                    {story.story_points} points
+                                  </div>
+                                )}
+                                {story.acceptance_criteria && story.acceptance_criteria.length > 0 && (
+                                  <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                                    <div className="font-medium mb-1">Acceptance Criteria:</div>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-2">
+                                      {story.acceptance_criteria.slice(0, 3).map((ac, i) => (
+                                        <li key={i}>{ac}</li>
+                                      ))}
+                                      {story.acceptance_criteria.length > 3 && (
+                                        <li className="text-gray-500 dark:text-gray-500">
+                                          +{story.acceptance_criteria.length - 3} more...
+                                        </li>
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+                        Total Story Points: {assignment.epic.totalStoryPoints}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Score breakdown */}
                   {expandedScore === assignment.epic.epic_id && (
