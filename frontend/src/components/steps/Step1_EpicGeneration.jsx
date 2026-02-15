@@ -61,6 +61,58 @@ export default function Step1_EpicGeneration() {
           Describe your project and we'll generate comprehensive epics, user stories, acceptance criteria, and test cases using AI.
         </p>
 
+        {/* Prompt Structure Guide */}
+        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <details className="group">
+            <summary className="cursor-pointer font-medium text-blue-900 dark:text-blue-300 flex items-center gap-2">
+              <span className="group-open:rotate-90 transition-transform">▶</span>
+              💡 How to Write an Effective Project Description
+            </summary>
+            <div className="mt-3 text-sm text-blue-800 dark:text-blue-300 space-y-3">
+              <div>
+                <strong>1. Project Overview</strong>
+                <p className="text-blue-700 dark:text-blue-400 ml-4">Start with 1-3 sentences describing your application's purpose and key characteristics.</p>
+                <code className="block ml-4 mt-1 text-xs bg-white dark:bg-gray-800 p-2 rounded">
+                  "Create a modern, responsive fitness tracking web application that helps users monitor their daily health..."
+                </code>
+              </div>
+
+              <div>
+                <strong>2. Core Features (Required)</strong>
+                <p className="text-blue-700 dark:text-blue-400 ml-4">List your main features as numbered items. Each feature will become an epic!</p>
+                <code className="block ml-4 mt-1 text-xs bg-white dark:bg-gray-800 p-2 rounded whitespace-pre">
+{`Core Features Required:
+1. User Authentication - Allow users to create accounts...
+2. Dashboard - Display a comprehensive overview...
+3. Workout Logging - Enable users to log exercises...`}
+                </code>
+              </div>
+
+              <div>
+                <strong>3. Feature Details</strong>
+                <p className="text-blue-700 dark:text-blue-400 ml-4">Add bullet points under each feature for specific requirements.</p>
+                <code className="block ml-4 mt-1 text-xs bg-white dark:bg-gray-800 p-2 rounded whitespace-pre">
+{`2. Dashboard - Display overview with:
+   - Daily calorie intake vs. burned calories
+   - Water intake tracking with goal progress
+   - Steps walked with daily goal indicator`}
+                </code>
+              </div>
+
+              <div>
+                <strong>4. Additional Details (Optional)</strong>
+                <p className="text-blue-700 dark:text-blue-400 ml-4">Include design requirements, technical stack, or performance needs if relevant.</p>
+              </div>
+
+              <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
+                <p className="text-blue-900 dark:text-blue-300">
+                  <strong>💡 Tip:</strong> The more features you list (up to 15), the more epics will be generated. Each numbered feature = 1 epic!
+                </p>
+              </div>
+            </div>
+          </details>
+        </div>
+
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Project Description
@@ -124,7 +176,7 @@ export default function Step1_EpicGeneration() {
         </button>
 
         <p className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-          This will generate 5 comprehensive epics with user stories, acceptance criteria, and test cases
+          Number of epics generated will match the number of features in your description (3-15 epics). Each epic includes user stories, acceptance criteria, and test cases.
         </p>
       </div>
     </div>
