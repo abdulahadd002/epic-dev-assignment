@@ -116,6 +116,143 @@ export function WorkflowProvider({ children }) {
       });
     },
 
+    // Regeneration actions
+    regenerateEpic: async (epicIndex, userRequirements = '') => {
+      const epic = state.generatedEpics[epicIndex];
+      const res = await fetch('/api/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'epic',
+          project_description: state.projectDescription,
+          context: {
+            epic_id: epic.epic_id,
+            epic_title: epic.epic_title,
+            epic_description: epic.epic_description,
+            user_requirements: userRequirements
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setState(prev => {
+          const epics = [...prev.generatedEpics];
+          const newEpic = data.data;
+          newEpic.approved = false;
+          newEpic.user_stories = (newEpic.user_stories || []).map(s => ({
+            ...s, approved: false, ac_approved: false,
+            test_cases: (s.test_cases || []).map(tc => ({ ...tc, approved: false }))
+          }));
+          epics[epicIndex] = newEpic;
+          return { ...prev, generatedEpics: epics };
+        });
+      }
+      return data;
+    },
+
+    regenerateStory: async (epicIndex, storyIndex, userRequirements = '') => {
+      const epic = state.generatedEpics[epicIndex];
+      const story = epic.user_stories[storyIndex];
+      const res = await fetch('/api/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'story',
+          project_description: state.projectDescription,
+          context: {
+            epic_id: epic.epic_id,
+            epic_title: epic.epic_title,
+            epic_description: epic.epic_description,
+            story_id: story.story_id,
+            story_title: story.story_title,
+            story_description: story.story_description,
+            user_requirements: userRequirements
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setState(prev => {
+          const epics = [...prev.generatedEpics];
+          const newStory = data.data;
+          newStory.approved = false;
+          newStory.ac_approved = false;
+          newStory.test_cases = (newStory.test_cases || []).map(tc => ({ ...tc, approved: false }));
+          epics[epicIndex].user_stories[storyIndex] = newStory;
+          return { ...prev, generatedEpics: epics };
+        });
+      }
+      return data;
+    },
+
+    regenerateAC: async (epicIndex, storyIndex, userRequirements = '') => {
+      const epic = state.generatedEpics[epicIndex];
+      const story = epic.user_stories[storyIndex];
+      const res = await fetch('/api/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'acceptance_criteria',
+          project_description: state.projectDescription,
+          context: {
+            epic_id: epic.epic_id,
+            epic_title: epic.epic_title,
+            epic_description: epic.epic_description,
+            story_id: story.story_id,
+            story_title: story.story_title,
+            story_description: story.story_description,
+            user_requirements: userRequirements
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setState(prev => {
+          const epics = [...prev.generatedEpics];
+          epics[epicIndex].user_stories[storyIndex].acceptance_criteria = data.data;
+          epics[epicIndex].user_stories[storyIndex].ac_approved = false;
+          return { ...prev, generatedEpics: epics };
+        });
+      }
+      return data;
+    },
+
+    regenerateTestCase: async (epicIndex, storyIndex, tcIndex, userRequirements = '') => {
+      const epic = state.generatedEpics[epicIndex];
+      const story = epic.user_stories[storyIndex];
+      const tc = story.test_cases[tcIndex];
+      const res = await fetch('/api/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'test_case',
+          project_description: state.projectDescription,
+          context: {
+            epic_id: epic.epic_id,
+            epic_title: epic.epic_title,
+            epic_description: epic.epic_description,
+            story_id: story.story_id,
+            story_title: story.story_title,
+            story_description: story.story_description,
+            test_case_id: tc.test_case_id,
+            test_case_description: tc.test_case_description,
+            user_requirements: userRequirements
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setState(prev => {
+          const epics = [...prev.generatedEpics];
+          const newTC = data.data;
+          newTC.approved = false;
+          epics[epicIndex].user_stories[storyIndex].test_cases[tcIndex] = newTC;
+          return { ...prev, generatedEpics: epics };
+        });
+      }
+      return data;
+    },
+
     setApprovedEpics: (epics) => {
       setState(prev => ({ ...prev, approvedEpics: epics }));
     },

@@ -24,6 +24,32 @@ export async function generateEpics(description) {
   }
 }
 
+export async function regenerateComponent(type, projectDescription, context) {
+  try {
+    const response = await fetch(`${FLASK_URL}/api/regenerate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type,
+        project_description: projectDescription,
+        context
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Flask regeneration error: ${error}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error calling Flask regeneration:', error);
+    throw error;
+  }
+}
+
 export async function classifyEpic(epicTitle, epicDescription) {
   try {
     const response = await fetch(`${FLASK_URL}/api/classify`, {

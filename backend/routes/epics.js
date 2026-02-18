@@ -1,5 +1,5 @@
 import express from 'express';
-import { generateEpics } from '../services/flaskProxy.js';
+import { generateEpics, regenerateComponent } from '../services/flaskProxy.js';
 import { classifyEpics } from '../services/epicClassifier.js';
 
 const router = express.Router();
@@ -25,6 +25,30 @@ router.post('/generate', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to generate epics'
+    });
+  }
+});
+
+// POST /api/regenerate - Regenerate a specific epic component
+router.post('/regenerate', async (req, res) => {
+  try {
+    const { type, project_description, context } = req.body;
+
+    if (!type || !project_description) {
+      return res.status(400).json({
+        success: false,
+        error: 'type and project_description are required'
+      });
+    }
+
+    const result = await regenerateComponent(type, project_description, context || {});
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error regenerating component:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to regenerate component'
     });
   }
 });
