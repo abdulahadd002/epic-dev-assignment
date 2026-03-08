@@ -33,6 +33,7 @@ router.post('/generate', async (req, res) => {
 router.post('/regenerate', async (req, res) => {
   try {
     const { type, project_description, context } = req.body;
+    console.log(`[Regenerate] type=${type}, user_requirements="${context?.user_requirements || '(none)'}"`);
 
     if (!type || !project_description) {
       return res.status(400).json({

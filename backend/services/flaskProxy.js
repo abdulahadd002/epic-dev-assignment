@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 
 const FLASK_URL = process.env.FLASK_URL || 'http://localhost:5000';
+const FETCH_TIMEOUT = 120000;
 
 export async function generateEpics(description) {
   try {
@@ -9,7 +10,8 @@ export async function generateEpics(description) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ description })
+      body: JSON.stringify({ description }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT)
     });
 
     if (!response.ok) {
@@ -35,7 +37,8 @@ export async function regenerateComponent(type, projectDescription, context) {
         type,
         project_description: projectDescription,
         context
-      })
+      }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT)
     });
 
     if (!response.ok) {

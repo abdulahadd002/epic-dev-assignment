@@ -1,14 +1,16 @@
 import { useWorkflow } from '../../context/WorkflowContext';
+import { motion } from 'framer-motion';
+import { Check } from 'lucide-react';
 
 const steps = [
-  { number: 1, title: 'Epic Generation', icon: '✨' },
-  { number: 2, title: 'Approval', icon: '✅' },
-  { number: 3, title: 'Dev Analysis', icon: '👥' },
-  { number: 4, title: 'Assignment', icon: '🎯' }
+  { number: 1, title: 'Generate', label: 'EPICS' },
+  { number: 2, title: 'Approve', label: 'REVIEW' },
+  { number: 3, title: 'Analyze', label: 'DEVS' },
+  { number: 4, title: 'Assign', label: 'MATCH' }
 ];
 
 export default function ProgressStepper() {
-  const { currentStep, approvedEpics, developers, assignments, setCurrentStep } = useWorkflow();
+  const { currentStep, setCurrentStep } = useWorkflow();
 
   const getStepStatus = (stepNumber) => {
     if (stepNumber < currentStep) return 'completed';
@@ -18,72 +20,92 @@ export default function ProgressStepper() {
 
   const handleStepClick = (stepNumber) => {
     const status = getStepStatus(stepNumber);
-    // Allow clicking on completed or current steps, but not upcoming
     if (status === 'completed' || status === 'current') {
       setCurrentStep(stepNumber);
     }
   };
 
-  const getStepBadge = (stepNumber) => {
-    if (stepNumber === 2 && approvedEpics.length > 0) {
-      return approvedEpics.length;
-    }
-    if (stepNumber === 3 && developers.length > 0) {
-      return developers.length;
-    }
-    if (stepNumber === 4 && assignments.length > 0) {
-      return assignments.length;
-    }
-    return null;
-  };
-
   return (
-    <div className="w-full max-w-4xl mx-auto">
-      <div className="flex items-center justify-between">
+    <div className="w-full max-w-2xl mx-auto">
+      <div className="flex items-center">
         {steps.map((step, index) => {
           const status = getStepStatus(step.number);
-          const badge = getStepBadge(step.number);
+          const isCompleted = status === 'completed';
+          const isCurrent = status === 'current';
+          const isUpcoming = status === 'upcoming';
 
           return (
             <div key={step.number} className="flex items-center flex-1">
               <div className="flex flex-col items-center flex-1">
-                <div
+                <button
                   onClick={() => handleStepClick(step.number)}
-                  className={`
-                    w-12 h-12 rounded-full flex items-center justify-center text-xl
-                    transition-all duration-300
-                    ${status === 'completed' ? 'bg-green-500 text-white cursor-pointer hover:bg-green-600' : ''}
-                    ${status === 'current' ? 'bg-blue-500 text-white ring-4 ring-blue-200 dark:ring-blue-900 cursor-pointer' : ''}
-                    ${status === 'upcoming' ? 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed' : ''}
-                  `}
+                  disabled={isUpcoming}
+                  className="relative group"
                 >
-                  {status === 'completed' ? '✓' : step.icon}
-                </div>
-                <div className="mt-2 text-center">
-                  <div
+                  {/* Glow ring for current */}
+                  {isCurrent && (
+                    <motion.div
+                      className="absolute -inset-1.5 rounded-2xl bg-accent-cyan/20 blur-sm"
+                      layoutId="stepGlow"
+                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    />
+                  )}
+                  <motion.div
                     className={`
-                      text-sm font-medium
-                      ${status === 'current' ? 'text-blue-600 dark:text-blue-400' : ''}
-                      ${status === 'completed' ? 'text-green-600 dark:text-green-400' : ''}
-                      ${status === 'upcoming' ? 'text-gray-500 dark:text-gray-400' : ''}
+                      relative w-10 h-10 rounded-xl flex items-center justify-center
+                      text-sm font-mono font-semibold
+                      transition-colors duration-300
+                      ${isCompleted ? 'bg-accent-cyan/15 text-accent-cyan cursor-pointer group-hover:bg-accent-cyan/25' : ''}
+                      ${isCurrent ? 'bg-accent-cyan text-black cursor-pointer' : ''}
+                      ${isUpcoming ? 'bg-white/[0.04] text-white/20 cursor-not-allowed' : ''}
                     `}
+                    whileHover={!isUpcoming ? { scale: 1.08 } : {}}
+                    whileTap={!isUpcoming ? { scale: 0.95 } : {}}
                   >
-                    {step.title}
-                    {badge && (
-                      <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
-                        {badge}
-                      </span>
+                    {isCompleted ? (
+                      <motion.div
+                        initial={{ scale: 0, rotate: -45 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                      >
+                        <Check className="w-4 h-4" strokeWidth={2.5} />
+                      </motion.div>
+                    ) : (
+                      step.number
                     )}
+                  </motion.div>
+                </button>
+                <div className="mt-2.5 text-center">
+                  <div className={`
+                    text-[11px] font-mono uppercase tracking-widest transition-colors duration-300
+                    ${isCurrent ? 'text-accent-cyan' : ''}
+                    ${isCompleted ? 'text-accent-cyan/50' : ''}
+                    ${isUpcoming ? 'text-white/15' : ''}
+                  `}>
+                    {step.label}
+                  </div>
+                  <div className={`
+                    text-xs mt-0.5 transition-colors duration-300
+                    ${isCurrent ? 'text-white/80' : ''}
+                    ${isCompleted ? 'text-white/35' : ''}
+                    ${isUpcoming ? 'text-white/10' : ''}
+                  `}>
+                    {step.title}
                   </div>
                 </div>
               </div>
               {index < steps.length - 1 && (
-                <div
-                  className={`
-                    flex-1 h-1 mx-2 -mt-6
-                    ${status === 'completed' ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'}
-                  `}
-                />
+                <div className="flex-1 mx-1 -mt-6 relative">
+                  <div className="h-px w-full bg-white/[0.06]" />
+                  {isCompleted && (
+                    <motion.div
+                      className="absolute top-0 left-0 h-px bg-gradient-to-r from-accent-cyan/40 to-accent-cyan/10"
+                      initial={{ width: 0 }}
+                      animate={{ width: '100%' }}
+                      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                    />
+                  )}
+                </div>
               )}
             </div>
           );

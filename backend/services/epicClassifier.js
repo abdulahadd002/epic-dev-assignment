@@ -77,14 +77,19 @@ export async function classifyEpic(epic) {
 
   // If multiple matches, try Gemini classification
   if (topTypes.length > 1) {
-    const geminiResult = await classifyWithGemini(epic.epic_title, epic.epic_description);
-    if (geminiResult && geminiResult.category) {
-      return {
-        primary: geminiResult.category,
-        confidence: "medium",
-        method: "gemini",
-        alternatives: topTypes
-      };
+    try {
+      const geminiResult = await classifyWithGemini(epic.epic_title, epic.epic_description);
+      if (geminiResult && geminiResult.category) {
+        return {
+          primary: geminiResult.category,
+          confidence: "medium",
+          method: "gemini",
+          alternatives: topTypes
+        };
+      }
+    } catch (err) {
+      // Gemini unavailable — fall through to keyword-based result
+      console.warn(`Gemini classification failed for "${epic.epic_title}":`, err.message);
     }
   }
 

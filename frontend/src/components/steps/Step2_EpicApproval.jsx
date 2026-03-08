@@ -1,84 +1,98 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, X, RefreshCw, ChevronDown, Loader2, Trash2 } from 'lucide-react';
+
+function clean(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^[-*_]{3,}\s*$/gm, '');
+}
+
+function useSpotlight() {
+  const ref = useRef(null);
+  const onMove = useCallback((e) => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty('--spotlight-x', `${e.clientX - rect.left}px`);
+    el.style.setProperty('--spotlight-y', `${e.clientY - rect.top}px`);
+  }, []);
+  return { ref, onMouseMove: onMove };
+}
 
 function RegenInput({ componentId, label, onSubmit, onCancel, isLoading }) {
   const [requirements, setRequirements] = useState('');
 
   return (
-    <div className="mt-3 p-3 border-2 border-blue-400 dark:border-blue-600 rounded-lg
-                    bg-blue-50 dark:bg-blue-900/20 space-y-2">
-      <div className="flex items-center gap-2 text-sm font-medium text-blue-700 dark:text-blue-300">
-        <span>🔄</span>
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      className="mt-3 p-4 rounded-xl bg-info/5 border border-info/20 space-y-3 overflow-hidden"
+    >
+      <div className="flex items-center gap-2 text-sm font-medium text-accent-cyan">
         <span>Regenerate {label}:</span>
-        <span className="px-2 py-0.5 bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200
-                       rounded text-xs font-bold">{componentId}</span>
+        <span className="badge bg-accent-cyan/15 text-accent-cyan">{componentId}</span>
       </div>
       <textarea
         value={requirements}
         onChange={(e) => setRequirements(e.target.value)}
-        placeholder={`Describe what you'd like changed for ${componentId}... (e.g., "Make it more specific to mobile platforms" or "Focus on security testing")`}
-        className="w-full p-2 text-sm border border-blue-300 dark:border-blue-600 rounded
-                 bg-white dark:bg-gray-800 text-gray-900 dark:text-white
-                 placeholder-gray-400 dark:placeholder-gray-500 resize-vertical min-h-[60px]
-                 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder={`Describe what you'd like changed for ${componentId}...`}
+        className="input-dark w-full resize-vertical min-h-[60px] text-sm"
         disabled={isLoading}
       />
       <div className="flex gap-2">
         <button
           onClick={() => onSubmit(requirements)}
           disabled={isLoading}
-          className="px-4 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700
-                   disabled:bg-gray-400 text-white rounded transition-colors"
+          className="btn-accent text-xs py-2 px-4"
         >
-          {isLoading ? '⏳ Regenerating...' : '🔄 Submit'}
+          {isLoading ? (
+            <span className="flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Regenerating...</span>
+          ) : 'Submit'}
         </button>
-        <button
-          onClick={onCancel}
-          disabled={isLoading}
-          className="px-4 py-1.5 text-xs font-medium bg-gray-500 hover:bg-gray-600
-                   disabled:bg-gray-400 text-white rounded transition-colors"
-        >
+        <button onClick={onCancel} disabled={isLoading} className="btn-ghost text-xs py-2 px-4">
           Cancel
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 export default function Step2_EpicApproval() {
   const {
-    generatedEpics,
-    approveEpic,
-    approveStory,
-    approveAC,
-    approveTestCase,
-    cancelEpic,
-    regenerateEpic,
-    regenerateStory,
-    regenerateAC,
-    regenerateTestCase,
-    setApprovedEpics,
-    nextStep,
-    previousStep
+    generatedEpics, approveEpic, approveStory, approveAC, approveTestCase,
+    cancelEpic, regenerateEpic, regenerateStory, regenerateAC, regenerateTestCase,
+    setApprovedEpics, nextStep, previousStep
   } = useWorkflow();
 
-  const [expandedEpics, setExpandedEpics] = useState([]);
+  const [expandedEpics, setExpandedEpics] = useState({});
   const [regenerating, setRegenerating] = useState({});
   const [regenOpen, setRegenOpen] = useState({});
 
-  // Initialize expanded state when epics are loaded
   useEffect(() => {
-    if (generatedEpics.length > 0 && expandedEpics.length === 0) {
-      setExpandedEpics(generatedEpics.map((_, i) => i === 0));
+    if (generatedEpics.length > 0) {
+      const epicIds = new Set(generatedEpics.map(e => e.epic_id));
+      const hasNewEpics = generatedEpics.some(e => !(e.epic_id in expandedEpics));
+      const hasStaleKeys = Object.keys(expandedEpics).some(id => !epicIds.has(id));
+      if (hasNewEpics || hasStaleKeys || Object.keys(expandedEpics).length === 0) {
+        const initial = {};
+        generatedEpics.forEach((epic, i) => {
+          initial[epic.epic_id] = expandedEpics[epic.epic_id] ?? (i === 0);
+        });
+        setExpandedEpics(initial);
+      }
     }
   }, [generatedEpics]);
 
-  const toggleEpic = (index) => {
-    setExpandedEpics(prev => {
-      const newState = [...prev];
-      newState[index] = !newState[index];
-      return newState;
-    });
+  const toggleEpic = (epicId) => {
+    setExpandedEpics(prev => ({ ...prev, [epicId]: !prev[epicId] }));
   };
 
   const approvedCount = generatedEpics.filter(e => e.approved).length;
@@ -86,13 +100,8 @@ export default function Step2_EpicApproval() {
     (sum, e) => sum + (e.user_stories?.filter(s => s.approved).length || 0), 0
   );
 
-  const openRegenInput = (key) => {
-    setRegenOpen(prev => ({ ...prev, [key]: true }));
-  };
-
-  const closeRegenInput = (key) => {
-    setRegenOpen(prev => ({ ...prev, [key]: false }));
-  };
+  const openRegenInput = (key) => setRegenOpen(prev => ({ ...prev, [key]: true }));
+  const closeRegenInput = (key) => setRegenOpen(prev => ({ ...prev, [key]: false }));
 
   const handleRegenerate = async (key, fn, requirements) => {
     setRegenerating(prev => ({ ...prev, [key]: true }));
@@ -117,345 +126,360 @@ export default function Step2_EpicApproval() {
       ...epic,
       user_stories: epic.user_stories?.filter(s => s.approved) || []
     }));
-
     if (approved.length === 0) {
       alert('Please approve at least one epic or user story before proceeding');
       return;
     }
-
     setApprovedEpics(approved);
     nextStep();
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 mb-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Review & Approve Epics
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400">
-              Review generated epics and approve the ones you want to include
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              Approved: <span className="font-bold text-blue-600 dark:text-blue-400">
-                {approvedCount} epics, {totalStories} stories
-              </span>
-            </div>
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-white">Review & Approve Epics</h2>
+          <p className="text-white/40 text-sm mt-1">
+            Review generated epics and approve the ones you want to include
+          </p>
+        </div>
+        <div className="stat-card text-right">
+          <div className="stat-label">Approved</div>
+          <div className="text-lg font-bold text-accent-cyan">
+            {approvedCount} <span className="text-xs text-white/30 font-normal">epics</span>
+            {' '}{totalStories} <span className="text-xs text-white/30 font-normal">stories</span>
           </div>
         </div>
+      </div>
 
-        <div className="space-y-4">
-          {generatedEpics.map((epic, eIndex) => (
-            <div
-              key={epic.epic_id}
-              className={`border rounded-lg overflow-hidden transition-all
-                ${epic.approved ? 'border-green-500 bg-green-50 dark:bg-green-900/10' :
-                  'border-gray-300 dark:border-gray-600'}`}
+      {/* Epic List */}
+      <div className="space-y-3">
+        {generatedEpics.map((epic, eIndex) => (
+          <EpicCard
+            key={epic.epic_id}
+            epic={epic}
+            eIndex={eIndex}
+            expanded={expandedEpics[epic.epic_id]}
+            onToggle={() => toggleEpic(epic.epic_id)}
+            regenerating={regenerating}
+            regenOpen={regenOpen}
+            openRegenInput={openRegenInput}
+            closeRegenInput={closeRegenInput}
+            handleRegenerate={handleRegenerate}
+            approveEpic={approveEpic}
+            approveStory={approveStory}
+            approveAC={approveAC}
+            approveTestCase={approveTestCase}
+            cancelEpic={cancelEpic}
+            regenerateEpic={regenerateEpic}
+            regenerateStory={regenerateStory}
+            regenerateAC={regenerateAC}
+            regenerateTestCase={regenerateTestCase}
+          />
+        ))}
+      </div>
+
+      {/* Navigation */}
+      <div className="flex gap-3">
+        <button onClick={previousStep} className="btn-ghost text-sm">Back</button>
+        <motion.button
+          onClick={handleProceed}
+          disabled={approvedCount === 0 && totalStories === 0}
+          className="btn-accent flex-1 text-sm"
+          whileTap={{ scale: 0.98 }}
+        >
+          Proceed to Developer Analysis
+        </motion.button>
+      </div>
+    </div>
+  );
+}
+
+function EpicCard({
+  epic, eIndex, expanded, onToggle,
+  regenerating, regenOpen, openRegenInput, closeRegenInput, handleRegenerate,
+  approveEpic, approveStory, approveAC, approveTestCase,
+  cancelEpic, regenerateEpic, regenerateStory, regenerateAC, regenerateTestCase
+}) {
+  const spotlight = useSpotlight();
+
+  return (
+    <motion.div
+      layout
+      ref={spotlight.ref}
+      onMouseMove={spotlight.onMouseMove}
+      className={`spotlight-card overflow-hidden transition-all duration-300
+        ${epic.approved ? 'border-success/30 bg-success/[0.02]' : ''}`}
+    >
+      {/* Epic Header */}
+      <div
+        onClick={onToggle}
+        className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <span className="badge bg-accent-cyan/15 text-accent-cyan shrink-0">{epic.epic_id}</span>
+          {epic.approved && (
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="badge bg-success/15 text-success shrink-0"
             >
-              {/* Epic Header */}
-              <div
-                onClick={() => toggleEpic(eIndex)}
-                className="flex items-center justify-between p-4 cursor-pointer
-                         hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🎯</span>
-                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900
-                                   text-blue-700 dark:text-blue-300 rounded">
-                      {epic.epic_id}
-                    </span>
-                    {epic.approved && (
-                      <span className="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900
-                                     text-green-700 dark:text-green-300 rounded">
-                        ✓ Approved
-                      </span>
-                    )}
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      {epic.epic_title}
-                    </span>
-                  </div>
-                </div>
-                <span className="text-xl">{expandedEpics[eIndex] ? '▼' : '▶'}</span>
-              </div>
+              <Check className="w-3 h-3 mr-0.5" /> Approved
+            </motion.span>
+          )}
+          <span className="font-medium text-white truncate">{clean(epic.epic_title)}</span>
+        </div>
+        <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronDown className="w-4 h-4 text-white/30" />
+        </motion.div>
+      </div>
 
-              {/* Epic Content */}
-              {expandedEpics[eIndex] && (
-                <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
-                  <div className="text-sm text-gray-700 dark:text-gray-300">
-                    <strong>Description:</strong> {epic.epic_description}
+      {/* Epic Content */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-5 border-t border-white/[0.04] space-y-4 pt-4">
+              <p className="text-sm text-white/50">{clean(epic.epic_description)}</p>
+
+              {/* User Stories */}
+              {epic.user_stories?.map((story, sIndex) => (
+                <div
+                  key={story.story_id}
+                  className={`ml-3 pl-4 border-l-2 space-y-3 transition-colors duration-300
+                    ${story.approved ? 'border-success/40' : 'border-white/[0.06]'}`}
+                >
+                  {/* Story header */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                      <span className="badge bg-purple/15 text-purple">{story.story_id}</span>
+                      {story.story_points && (
+                        <span className="badge bg-warning/15 text-warning">{story.story_points} pts</span>
+                      )}
+                      {story.approved && (
+                        <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="badge bg-success/15 text-success">
+                          Approved
+                        </motion.span>
+                      )}
+                    </div>
+                    <div className="text-sm font-medium text-white/85">{clean(story.story_title)}</div>
+                    <div className="text-sm text-white/45 mt-1">{clean(story.story_description)}</div>
                   </div>
 
-                  {/* User Stories */}
-                  {epic.user_stories?.map((story, sIndex) => (
-                    <div
-                      key={story.story_id}
-                      className={`ml-4 border-l-4 pl-4 space-y-3
-                        ${story.approved ? 'border-green-500' : 'border-gray-300 dark:border-gray-600'}`}
+                  {/* Acceptance Criteria */}
+                  {story.acceptance_criteria && (
+                    <div className={`p-3.5 rounded-xl text-sm relative transition-all duration-300
+                      ${story.ac_approved ? 'bg-success/[0.05] border border-success/10' : 'bg-white/[0.02] border border-white/[0.04]'}
+                      ${regenerating[`ac-${story.story_id}`] ? 'opacity-50 pointer-events-none' : ''}`}
                     >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <span>👤</span>
-                            <span className="px-2 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900
-                                           text-purple-700 dark:text-purple-300 rounded">
-                              {story.story_id}
-                            </span>
-                            {story.story_points && (
-                              <span className="px-2 py-1 text-xs font-medium bg-yellow-100 dark:bg-yellow-900
-                                             text-yellow-700 dark:text-yellow-300 rounded">
-                                {story.story_points} pts
-                              </span>
-                            )}
-                            {story.approved && (
-                              <span className="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900
-                                             text-green-700 dark:text-green-300 rounded">
-                                ✓
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {story.story_title}
-                          </div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                            {story.story_description}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Acceptance Criteria */}
-                      {story.acceptance_criteria && (
-                        <div className={`p-3 rounded-lg text-sm relative
-                          ${story.ac_approved ? 'bg-green-50 dark:bg-green-900/20' :
-                            'bg-gray-50 dark:bg-gray-700'}
-                          ${regenerating[`ac-${eIndex}-${sIndex}`] ? 'opacity-50 pointer-events-none' : ''}`}
-                        >
-                          {regenerating[`ac-${eIndex}-${sIndex}`] && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70 rounded-lg z-10">
-                              <span className="text-sm font-medium text-blue-600 dark:text-blue-400">Regenerating...</span>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between mb-2">
-                            <strong className="text-gray-700 dark:text-gray-300">
-                              ✅ Acceptance Criteria
-                            </strong>
-                            <div className="flex gap-2">
-                              {!regenOpen[`ac-${eIndex}-${sIndex}`] && (
-                                <button
-                                  onClick={() => openRegenInput(`ac-${eIndex}-${sIndex}`)}
-                                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700
-                                           text-white rounded transition-colors"
-                                >
-                                  🔄 Regenerate
-                                </button>
-                              )}
-                              {!story.ac_approved && (
-                                <button
-                                  onClick={() => approveAC(eIndex, sIndex)}
-                                  className="px-3 py-1 text-xs bg-green-600 hover:bg-green-700
-                                           text-white rounded transition-colors"
-                                >
-                                  ✓ Approve
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-gray-600 dark:text-gray-300 whitespace-pre-wrap">
-                            {story.acceptance_criteria}
-                          </div>
-                          {regenOpen[`ac-${eIndex}-${sIndex}`] && (
-                            <RegenInput
-                              componentId={story.story_id}
-                              label="Acceptance Criteria"
-                              isLoading={regenerating[`ac-${eIndex}-${sIndex}`]}
-                              onCancel={() => closeRegenInput(`ac-${eIndex}-${sIndex}`)}
-                              onSubmit={(reqs) => handleRegenerate(
-                                `ac-${eIndex}-${sIndex}`,
-                                (r) => regenerateAC(eIndex, sIndex, r),
-                                reqs
-                              )}
-                            />
-                          )}
+                      {regenerating[`ac-${story.story_id}`] && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-[#050505]/70 rounded-xl z-10">
+                          <span className="text-sm font-medium text-accent-cyan flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" /> Regenerating...
+                          </span>
                         </div>
                       )}
-
-                      {/* Test Cases */}
-                      {story.test_cases?.map((tc, tcIndex) => (
-                        <div
-                          key={tc.test_case_id}
-                          className={`p-3 rounded-lg text-sm relative
-                            ${tc.approved ? 'bg-green-50 dark:bg-green-900/20' :
-                              'bg-gray-50 dark:bg-gray-700'}
-                            ${regenerating[`tc-${eIndex}-${sIndex}-${tcIndex}`] ? 'opacity-50 pointer-events-none' : ''}`}
-                        >
-                          {regenerating[`tc-${eIndex}-${sIndex}-${tcIndex}`] && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70 rounded-lg z-10">
-                              <span className="text-sm font-medium text-blue-600 dark:text-blue-400">Regenerating...</span>
-                            </div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-mono uppercase tracking-wider text-white/30">Acceptance Criteria</span>
+                        <div className="flex gap-2">
+                          {!regenOpen[`ac-${story.story_id}`] && (
+                            <button onClick={() => openRegenInput(`ac-${story.story_id}`)} className="btn-subtle text-xs py-1 px-3">
+                              <RefreshCw className="w-3 h-3 inline mr-1" />Regen
+                            </button>
                           )}
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span>🧪</span>
-                              <span className="font-medium text-gray-900 dark:text-white">
-                                {tc.test_case_id}
-                              </span>
-                            </div>
-                            <div className="flex gap-2">
-                              {!regenOpen[`tc-${eIndex}-${sIndex}-${tcIndex}`] && (
-                                <button
-                                  onClick={() => openRegenInput(`tc-${eIndex}-${sIndex}-${tcIndex}`)}
-                                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700
-                                           text-white rounded transition-colors"
-                                >
-                                  🔄 Regenerate
-                                </button>
-                              )}
-                              {!tc.approved && (
-                                <button
-                                  onClick={() => approveTestCase(eIndex, sIndex, tcIndex)}
-                                  className="px-3 py-1 text-xs bg-green-600 hover:bg-green-700
-                                           text-white rounded transition-colors"
-                                >
-                                  ✓ Approve
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-gray-600 dark:text-gray-300">
-                            {tc.test_case_description}
-                          </div>
-                          {tc.expected_results && (
-                            <ul className="mt-2 ml-4 list-disc text-gray-600 dark:text-gray-300">
-                              {tc.expected_results.map((result, i) => (
-                                <li key={i}>{result}</li>
-                              ))}
-                            </ul>
-                          )}
-                          {regenOpen[`tc-${eIndex}-${sIndex}-${tcIndex}`] && (
-                            <RegenInput
-                              componentId={tc.test_case_id}
-                              label="Test Case"
-                              isLoading={regenerating[`tc-${eIndex}-${sIndex}-${tcIndex}`]}
-                              onCancel={() => closeRegenInput(`tc-${eIndex}-${sIndex}-${tcIndex}`)}
-                              onSubmit={(reqs) => handleRegenerate(
-                                `tc-${eIndex}-${sIndex}-${tcIndex}`,
-                                (r) => regenerateTestCase(eIndex, sIndex, tcIndex, r),
-                                reqs
-                              )}
-                            />
+                          {!story.ac_approved && (
+                            <button onClick={() => approveAC(eIndex, sIndex)} className="btn-subtle text-xs py-1 px-3 bg-success/10 text-success hover:bg-success/20">
+                              Approve
+                            </button>
                           )}
                         </div>
-                      ))}
-
-                      {/* Story Actions */}
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          onClick={() => approveStory(eIndex, sIndex)}
-                          disabled={story.approved}
-                          className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700
-                                   disabled:bg-gray-400 text-white rounded transition-colors"
-                        >
-                          {story.approved ? '✓ Story Approved' : '✓ Approve Story'}
-                        </button>
-                        {!regenOpen[`story-${eIndex}-${sIndex}`] && (
-                          <button
-                            onClick={() => openRegenInput(`story-${eIndex}-${sIndex}`)}
-                            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700
-                                     text-white rounded transition-colors"
-                          >
-                            🔄 Regenerate Story
-                          </button>
+                      </div>
+                      <div className="text-white/55 whitespace-pre-wrap text-[13px] leading-relaxed">
+                        {clean(story.acceptance_criteria)}
+                      </div>
+                      <AnimatePresence>
+                        {regenOpen[`ac-${story.story_id}`] && (
+                          <RegenInput
+                            componentId={story.story_id}
+                            label="Acceptance Criteria"
+                            isLoading={regenerating[`ac-${story.story_id}`]}
+                            onCancel={() => closeRegenInput(`ac-${story.story_id}`)}
+                            onSubmit={(reqs) => handleRegenerate(
+                              `ac-${story.story_id}`, (r) => regenerateAC(eIndex, sIndex, r), reqs
+                            )}
+                          />
                         )}
-                      </div>
-                      {regenOpen[`story-${eIndex}-${sIndex}`] && (
-                        <RegenInput
-                          componentId={story.story_id}
-                          label="User Story"
-                          isLoading={regenerating[`story-${eIndex}-${sIndex}`]}
-                          onCancel={() => closeRegenInput(`story-${eIndex}-${sIndex}`)}
-                          onSubmit={(reqs) => handleRegenerate(
-                            `story-${eIndex}-${sIndex}`,
-                            (r) => regenerateStory(eIndex, sIndex, r),
-                            reqs
-                          )}
-                        />
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* Test Cases */}
+                  {story.test_cases?.map((tc, tcIndex) => (
+                    <div
+                      key={tc.test_case_id}
+                      className={`p-3.5 rounded-xl text-sm relative transition-all duration-300
+                        ${tc.approved ? 'bg-success/[0.05] border border-success/10' : 'bg-white/[0.02] border border-white/[0.04]'}
+                        ${regenerating[`tc-${tc.test_case_id}`] ? 'opacity-50 pointer-events-none' : ''}`}
+                    >
+                      {regenerating[`tc-${tc.test_case_id}`] && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-[#050505]/70 rounded-xl z-10">
+                          <span className="text-sm font-medium text-accent-cyan flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" /> Regenerating...
+                          </span>
+                        </div>
                       )}
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="badge bg-white/[0.06] text-white/50">{tc.test_case_id}</span>
+                        <div className="flex gap-2">
+                          {!regenOpen[`tc-${tc.test_case_id}`] && (
+                            <button onClick={() => openRegenInput(`tc-${tc.test_case_id}`)} className="btn-subtle text-xs py-1 px-3">
+                              <RefreshCw className="w-3 h-3 inline mr-1" />Regen
+                            </button>
+                          )}
+                          {!tc.approved && (
+                            <button onClick={() => approveTestCase(eIndex, sIndex, tcIndex)} className="btn-subtle text-xs py-1 px-3 bg-success/10 text-success hover:bg-success/20">
+                              Approve
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-white/55 text-[13px]">{clean(tc.test_case_description)}</div>
+
+                      {/* Input section */}
+                      {(tc.input_preconditions || tc.input_test_data || tc.input_user_action) && (
+                        <div className="mt-2.5 p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] space-y-1.5">
+                          <div className="text-[11px] font-mono uppercase tracking-wider text-white/25 mb-1.5">Input</div>
+                          {tc.input_preconditions && (
+                            <div className="text-[13px]">
+                              <span className="text-accent-cyan/60 font-medium">Preconditions: </span>
+                              <span className="text-white/45">{clean(tc.input_preconditions)}</span>
+                            </div>
+                          )}
+                          {tc.input_test_data && (
+                            <div className="text-[13px]">
+                              <span className="text-accent-cyan/60 font-medium">Test Data: </span>
+                              <span className="text-white/45">{clean(tc.input_test_data)}</span>
+                            </div>
+                          )}
+                          {tc.input_user_action && (
+                            <div className="text-[13px]">
+                              <span className="text-accent-cyan/60 font-medium">User Action: </span>
+                              <span className="text-white/45">{clean(tc.input_user_action)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {tc.expected_results?.length > 0 && (
+                        <div className="mt-2.5">
+                          <div className="text-[11px] font-mono uppercase tracking-wider text-white/25 mb-1.5">Expected Result</div>
+                          <ul className="ml-4 space-y-1 text-white/45 text-[13px] list-disc">
+                            {tc.expected_results.map((result, i) => (
+                              <li key={i}>{clean(result)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <AnimatePresence>
+                        {regenOpen[`tc-${tc.test_case_id}`] && (
+                          <RegenInput
+                            componentId={tc.test_case_id}
+                            label="Test Case"
+                            isLoading={regenerating[`tc-${tc.test_case_id}`]}
+                            onCancel={() => closeRegenInput(`tc-${tc.test_case_id}`)}
+                            onSubmit={(reqs) => handleRegenerate(
+                              `tc-${tc.test_case_id}`, (r) => regenerateTestCase(eIndex, sIndex, tcIndex, r), reqs
+                            )}
+                          />
+                        )}
+                      </AnimatePresence>
                     </div>
                   ))}
 
-                  {/* Epic Actions */}
-                  <div className="flex gap-2 pt-4 flex-wrap">
-                    <button
-                      onClick={() => approveEpic(eIndex)}
-                      disabled={epic.approved}
-                      className="px-6 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400
-                               text-white font-medium rounded transition-colors"
+                  {/* Story Actions */}
+                  <div className="flex gap-2 flex-wrap">
+                    <motion.button
+                      onClick={() => approveStory(eIndex, sIndex)}
+                      disabled={story.approved}
+                      className={`text-xs py-2 px-4 rounded-lg font-medium transition-all duration-200
+                        ${story.approved
+                          ? 'bg-success/10 text-success/60 cursor-default'
+                          : 'bg-success/15 text-success hover:bg-success/25 hover:shadow-[0_0_12px_rgba(52,211,153,0.15)] cursor-pointer'}`}
+                      whileTap={!story.approved ? { scale: 0.95 } : {}}
                     >
-                      {epic.approved ? '✓ Epic Approved' : '✓ Approve Epic'}
-                    </button>
-                    {!regenOpen[`epic-${eIndex}`] && (
-                      <button
-                        onClick={() => openRegenInput(`epic-${eIndex}`)}
-                        className="px-6 py-2 bg-blue-600 hover:bg-blue-700
-                                 text-white font-medium rounded transition-colors"
-                      >
-                        🔄 Regenerate Epic
+                      {story.approved ? <><Check className="w-3 h-3 inline mr-1" />Story Approved</> : 'Approve Story'}
+                    </motion.button>
+                    {!regenOpen[`story-${story.story_id}`] && (
+                      <button onClick={() => openRegenInput(`story-${story.story_id}`)} className="btn-subtle text-xs py-2 px-4">
+                        <RefreshCw className="w-3 h-3 inline mr-1" />Regenerate Story
                       </button>
                     )}
-                    <button
-                      onClick={() => {
-                        if (confirm('Remove this epic?')) {
-                          cancelEpic(eIndex);
-                        }
-                      }}
-                      className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white
-                               font-medium rounded transition-colors"
-                    >
-                      ✕ Remove Epic
-                    </button>
                   </div>
-                  {regenOpen[`epic-${eIndex}`] && (
-                    <RegenInput
-                      componentId={epic.epic_id}
-                      label="Epic"
-                      isLoading={regenerating[`epic-${eIndex}`]}
-                      onCancel={() => closeRegenInput(`epic-${eIndex}`)}
-                      onSubmit={(reqs) => handleRegenerate(
-                        `epic-${eIndex}`,
-                        (r) => regenerateEpic(eIndex, r),
-                        reqs
-                      )}
-                    />
-                  )}
+                  <AnimatePresence>
+                    {regenOpen[`story-${story.story_id}`] && (
+                      <RegenInput
+                        componentId={story.story_id}
+                        label="User Story"
+                        isLoading={regenerating[`story-${story.story_id}`]}
+                        onCancel={() => closeRegenInput(`story-${story.story_id}`)}
+                        onSubmit={(reqs) => handleRegenerate(
+                          `story-${story.story_id}`, (r) => regenerateStory(eIndex, sIndex, r), reqs
+                        )}
+                      />
+                    )}
+                  </AnimatePresence>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+              ))}
 
-        <div className="flex gap-4 mt-8">
-          <button
-            onClick={previousStep}
-            className="px-6 py-3 border border-gray-300 dark:border-gray-600
-                     text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50
-                     dark:hover:bg-gray-700 transition-colors"
-          >
-            ← Back
-          </button>
-          <button
-            onClick={handleProceed}
-            disabled={approvedCount === 0 && totalStories === 0}
-            className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400
-                     text-white font-medium rounded-lg transition-colors"
-          >
-            Proceed to Developer Analysis →
-          </button>
-        </div>
-      </div>
-    </div>
+              {/* Epic Actions */}
+              <div className="flex gap-2 pt-3 border-t border-white/[0.04] flex-wrap">
+                <motion.button
+                  onClick={() => approveEpic(eIndex)}
+                  disabled={epic.approved}
+                  className={`text-sm py-2.5 px-5 rounded-lg font-medium transition-all duration-200
+                    ${epic.approved
+                      ? 'bg-success/10 text-success/60 cursor-default'
+                      : 'bg-success text-black hover:shadow-[0_0_20px_rgba(52,211,153,0.3)] cursor-pointer'}`}
+                  whileTap={!epic.approved ? { scale: 0.95 } : {}}
+                >
+                  {epic.approved ? <><Check className="w-4 h-4 inline mr-1" />Epic Approved</> : 'Approve Epic'}
+                </motion.button>
+                {!regenOpen[`epic-${epic.epic_id}`] && (
+                  <button onClick={() => openRegenInput(`epic-${epic.epic_id}`)} className="btn-subtle text-sm py-2.5 px-5">
+                    <RefreshCw className="w-3.5 h-3.5 inline mr-1" />Regenerate
+                  </button>
+                )}
+                <button
+                  onClick={() => { if (confirm('Remove this epic?')) cancelEpic(eIndex); }}
+                  className="text-sm py-2.5 px-5 rounded-lg font-medium text-danger/60 bg-danger/10
+                           hover:bg-danger/20 hover:text-danger transition-all duration-200"
+                >
+                  <Trash2 className="w-3.5 h-3.5 inline mr-1" />Remove
+                </button>
+              </div>
+              <AnimatePresence>
+                {regenOpen[`epic-${epic.epic_id}`] && (
+                  <RegenInput
+                    componentId={epic.epic_id}
+                    label="Epic"
+                    isLoading={regenerating[`epic-${epic.epic_id}`]}
+                    onCancel={() => closeRegenInput(`epic-${epic.epic_id}`)}
+                    onSubmit={(reqs) => handleRegenerate(
+                      `epic-${epic.epic_id}`, (r) => regenerateEpic(eIndex, r), reqs
+                    )}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

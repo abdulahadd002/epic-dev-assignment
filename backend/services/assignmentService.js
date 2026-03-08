@@ -1,5 +1,104 @@
 import { classifyEpic } from './epicClassifier.js';
 
+// Maximum story points a single developer should handle
+const MAX_CAPACITY_PER_DEV = 100;
+
+/**
+ * Normalize a raw expertise score to 0-1 range relative to the developer's max score
+ */
+function normalizeExpertiseScore(matchScore, allExpertise) {
+  if (!allExpertise?.length) return 0;
+  const maxScore = Math.max(...allExpertise.map(e => e.score));
+  if (maxScore === 0) return 0;
+  return matchScore / maxScore;
+}
+
+/**
+ * Score a single developer for a specific epic
+ */
+function scoreDeveloper(dev, epicType, devWorkloads, developers) {
+  let score = 0;
+  const breakdown = {
+    expertiseMatch: 0,
+    experienceLevel: 0,
+    workloadBalance: 0
+  };
+
+  const allExpertise = dev.analysis?.expertise?.all || [];
+
+  // Factor 1: Expertise Match (50 points max)
+  const expertiseMatch = allExpertise.find(e => e.name === epicType);
+  if (expertiseMatch) {
+    // Normalize: how strong is this area relative to the dev's best area
+    const normalized = normalizeExpertiseScore(expertiseMatch.score, allExpertise);
+    const expertisePoints = Math.round(normalized * 50);
+    score += expertisePoints;
+    breakdown.expertiseMatch = expertisePoints;
+  } else if (dev.analysis?.expertise?.primary === "Full Stack") {
+    // Full Stack devs get partial credit proportional to their breadth
+    // More expertise areas = better generalist = higher partial score
+    const areaCount = allExpertise.length;
+    const fullStackPoints = Math.min(30, Math.round((areaCount / 5) * 30));
+    score += fullStackPoints;
+    breakdown.expertiseMatch = fullStackPoints;
+  }
+  // No match and not Full Stack → 0 expertise points (penalizes mismatches)
+
+  // Factor 2: Experience Level (30 points max)
+  const experiencePoints = {
+    "Senior": 30,
+    "Mid-Level": 20,
+    "Junior": 10,
+    "Beginner": 5
+  };
+  const expPoints = experiencePoints[dev.analysis?.experienceLevel?.level] || 5;
+  score += expPoints;
+  breakdown.experienceLevel = expPoints;
+
+  // Factor 3: Workload Balance (20 points max)
+  const totalAssigned = Object.values(devWorkloads).reduce((a, b) => a + b, 0);
+  const avgWorkload = totalAssigned / developers.length;
+  const currentLoad = devWorkloads[dev.username] || 0;
+
+  // Penalize overloaded developers, reward underloaded ones
+  if (currentLoad >= MAX_CAPACITY_PER_DEV) {
+    // At or over capacity — no workload bonus
+    breakdown.workloadBalance = 0;
+  } else {
+    const maxLoad = Math.max(...Object.values(devWorkloads), 1);
+    // Score inversely proportional to current load
+    const loadRatio = 1 - (currentLoad / Math.max(maxLoad, avgWorkload || 1));
+    const workloadPoints = Math.round(Math.max(0, Math.min(20, loadRatio * 20)));
+    score += workloadPoints;
+    breakdown.workloadBalance = workloadPoints;
+  }
+
+  return { dev, score, breakdown };
+}
+
+/**
+ * Calculate confidence based on score, score gap, and expertise match quality
+ */
+function calculateConfidence(topScore, secondScore, hasExpertiseMatch, epicClassificationConfidence) {
+  const scoreGap = topScore - secondScore;
+  let confidence = "low";
+
+  if (topScore >= 65 && hasExpertiseMatch && scoreGap >= 10) {
+    confidence = "high";
+  } else if (topScore >= 50 && hasExpertiseMatch) {
+    confidence = scoreGap >= 5 ? "high" : "medium";
+  } else if (topScore >= 40 || hasExpertiseMatch) {
+    confidence = "medium";
+  }
+
+  // Downgrade if epic classification itself was uncertain
+  if (epicClassificationConfidence === "low" && confidence === "high") {
+    confidence = "medium";
+  }
+
+  return confidence;
+}
+
 /**
  * Auto-assign epics to developers using multi-factor scoring algorithm
  * @param {Array} epics - Approved epics with user stories
@@ -17,66 +116,41 @@ export async function autoAssignEpics(epics, developers) {
 
   // Classify and assign each epic
   for (const epic of epics) {
-    // Classify epic if not already classified
     if (!epic.classification) {
       epic.classification = await classifyEpic(epic);
     }
 
     const epicType = epic.classification.primary;
 
-    // Calculate total story points for this epic
     const totalStoryPoints = epic.user_stories?.reduce((sum, story) =>
       sum + parseInt(story.story_points || 5, 10), 0
     ) || 10;
 
     // Score each developer for this epic
-    const devScores = developers.map(dev => {
-      let score = 0;
-      const breakdown = {
-        expertiseMatch: 0,
-        experienceLevel: 0,
-        workloadBalance: 0
-      };
+    const devScores = developers.map(dev =>
+      scoreDeveloper(dev, epicType, devWorkloads, developers)
+    );
 
-      // Factor 1: Expertise Match (50 points max)
-      const expertiseMatch = dev.analysis?.expertise?.all?.find(e => e.name === epicType);
-      if (expertiseMatch) {
-        const expertisePoints = Math.min(50, expertiseMatch.score / 2);
-        score += expertisePoints;
-        breakdown.expertiseMatch = expertisePoints;
-      } else if (dev.analysis?.expertise?.primary === "Full Stack") {
-        score += 25; // Full stack bonus
-        breakdown.expertiseMatch = 25;
-      }
-
-      // Factor 2: Experience Level (30 points max)
-      const experiencePoints = {
-        "Senior": 30,
-        "Mid-Level": 20,
-        "Junior": 10,
-        "Beginner": 5
-      };
-      const expPoints = experiencePoints[dev.analysis?.experienceLevel?.level] || 5;
-      score += expPoints;
-      breakdown.experienceLevel = expPoints;
-
-      // Factor 3: Workload Balance (20 points max - inverse)
-      const avgWorkload = Object.values(devWorkloads).reduce((a, b) => a + b, 0) /
-                          developers.length;
-      const workloadDiff = avgWorkload - devWorkloads[dev.username];
-      const workloadPoints = Math.min(20, Math.max(0, workloadDiff / 5));
-      score += workloadPoints;
-      breakdown.workloadBalance = workloadPoints;
-
-      return { dev, score, breakdown };
+    // Sort by score descending, with tie-breaking:
+    // 1. Higher experience level score breaks ties
+    // 2. Alphabetical username as final stable tiebreaker
+    devScores.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.breakdown.experienceLevel !== a.breakdown.experienceLevel)
+        return b.breakdown.experienceLevel - a.breakdown.experienceLevel;
+      return a.dev.username.localeCompare(b.dev.username);
     });
 
-    // Sort by score (descending)
-    devScores.sort((a, b) => b.score - a.score);
-
-    // Assign to top developer
     const assigned = devScores[0];
-    const confidence = getConfidence(assigned.score);
+    const secondBest = devScores[1];
+    const hasExpertiseMatch = assigned.breakdown.expertiseMatch > 0;
+
+    const confidence = calculateConfidence(
+      assigned.score,
+      secondBest?.score ?? 0,
+      hasExpertiseMatch,
+      epic.classification.confidence
+    );
 
     assignments.push({
       epic: {
@@ -85,7 +159,8 @@ export async function autoAssignEpics(epics, developers) {
         epic_description: epic.epic_description,
         classification: epic.classification,
         totalStoryPoints,
-        userStoriesCount: epic.user_stories?.length || 0
+        userStoriesCount: epic.user_stories?.length || 0,
+        user_stories: epic.user_stories || []
       },
       developer: {
         username: assigned.dev.username,
@@ -122,21 +197,16 @@ export async function autoAssignEpics(epics, developers) {
   };
 }
 
-function getConfidence(score) {
-  if (score >= 70) return "high";
-  if (score >= 50) return "medium";
-  return "low";
-}
-
 /**
- * Manually reassign an epic to a different developer
+ * Manually reassign an epic to a different developer with score recalculation
  * @param {Array} assignments - Current assignments
  * @param {string} epicId - Epic ID to reassign
  * @param {string} newDeveloperUsername - New developer username
  * @param {Object} workloadDistribution - Current workload distribution
+ * @param {Array} developers - Full developer list for score recalculation
  * @returns {Object} Updated assignments and workload
  */
-export function reassignEpic(assignments, epicId, newDeveloperUsername, workloadDistribution) {
+export function reassignEpic(assignments, epicId, newDeveloperUsername, workloadDistribution, developers) {
   const assignmentIndex = assignments.findIndex(a => a.epic.epic_id === epicId);
 
   if (assignmentIndex === -1) {
@@ -149,12 +219,29 @@ export function reassignEpic(assignments, epicId, newDeveloperUsername, workload
 
   // Update workload
   workloadDistribution[oldDeveloper] -= storyPoints;
-  workloadDistribution[newDeveloperUsername] += storyPoints;
+  workloadDistribution[newDeveloperUsername] = (workloadDistribution[newDeveloperUsername] || 0) + storyPoints;
 
-  // Update assignment (keep same epic, change developer)
-  // Note: This is simplified - in real implementation, would look up new developer details
-  assignments[assignmentIndex].developer.username = newDeveloperUsername;
-  assignments[assignmentIndex].confidence = "manual";
+  // Find new developer's full data for proper score recalculation
+  const newDev = developers?.find(d => d.username === newDeveloperUsername);
+
+  if (newDev) {
+    const epicType = assignment.epic.classification?.primary || "Full Stack";
+    const recalc = scoreDeveloper(newDev, epicType, workloadDistribution, developers || []);
+
+    assignments[assignmentIndex].developer = {
+      username: newDev.username,
+      expertise: newDev.analysis?.expertise?.primary || "Full Stack",
+      experienceLevel: newDev.analysis?.experienceLevel?.level || "Junior",
+      avatar: newDev.avatar
+    };
+    assignments[assignmentIndex].score = Math.round(recalc.score);
+    assignments[assignmentIndex].breakdown = recalc.breakdown;
+    assignments[assignmentIndex].confidence = recalc.breakdown.expertiseMatch > 0 ? "manual-verified" : "manual";
+  } else {
+    // Fallback if developer data not available
+    assignments[assignmentIndex].developer.username = newDeveloperUsername;
+    assignments[assignmentIndex].confidence = "manual";
+  }
 
   return {
     success: true,

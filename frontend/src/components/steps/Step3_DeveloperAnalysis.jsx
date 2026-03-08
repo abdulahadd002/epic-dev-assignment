@@ -1,43 +1,44 @@
 import { useState } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, X, Users, Loader2, ChevronDown } from 'lucide-react';
+import SpotlightCard from '../shared/SpotlightCard';
+import { SkeletonDevCard } from '../shared/Skeleton';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line,
 } from 'recharts';
 
-const COLORS = ['#10b981', '#ef4444']; // On-time, Late
-const FILE_COLORS = [
-  '#3b82f6',
-  '#8b5cf6',
-  '#10b981',
-  '#f59e0b',
-  '#ef4444',
-  '#6b7280',
-  '#14b8a6',
-  '#a855f7',
-];
+const COLORS = ['#34D399', '#F87171'];
+const FILE_COLORS = ['#70E6ED', '#A78BFA', '#34D399', '#FBBF24', '#F87171', '#6B7280', '#14B8A6', '#818CF8'];
+
+const CHART_GRID = '#1a1a1a';
+const CHART_TICK = { fontSize: 10, fill: 'rgba(255,255,255,0.3)' };
+const CHART_TOOLTIP = {
+  contentStyle: { background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' },
+  itemStyle: { color: 'rgba(255,255,255,0.7)' },
+  labelStyle: { color: 'rgba(255,255,255,0.4)' }
+};
+
+const toneColors = {
+  purple: { bg: 'bg-purple/15', text: 'text-purple' },
+  blue: { bg: 'bg-blue/15', text: 'text-blue' },
+  green: { bg: 'bg-green/15', text: 'text-green' },
+  yellow: { bg: 'bg-warning/15', text: 'text-warning' },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 16 },
+  show: (i) => ({
+    opacity: 1, y: 0,
+    transition: { delay: i * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }
+  })
+};
 
 export default function Step3_DeveloperAnalysis() {
-  const {
-    developers,
-    setDevelopers,
-    nextStep,
-    previousStep
-  } = useWorkflow();
+  const { developers, setDevelopers, nextStep, previousStep } = useWorkflow();
 
-  const [devInputs, setDevInputs] = useState([
-    { username: '', owner: '', repo: '' }
-  ]);
+  const [devInputs, setDevInputs] = useState([{ username: '', owner: '', repo: '' }]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [expandedDev, setExpandedDev] = useState(null);
@@ -58,7 +59,6 @@ export default function Step3_DeveloperAnalysis() {
 
   const handleAnalyze = async () => {
     const validInputs = devInputs.filter(d => d.username.trim());
-
     if (validInputs.length === 0) {
       setError('Please enter at least one GitHub username');
       return;
@@ -74,11 +74,11 @@ export default function Step3_DeveloperAnalysis() {
         body: JSON.stringify({ developers: validInputs })
       });
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to analyze developers');
-      }
+      const text = await response.text();
+      if (!text) throw new Error('Empty response from server. Please try again.');
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error('Invalid response from server. Please try again.'); }
+      if (!data.success) throw new Error(data.error || 'Failed to analyze developers');
 
       setDevelopers(data.developers);
       if (data.developers.length === 0) {
@@ -104,353 +104,337 @@ export default function Step3_DeveloperAnalysis() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Input Section */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          Analyze Developers
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400 mb-6">
-          Enter GitHub usernames to analyze developer expertise from commit history
-        </p>
+      <SpotlightCard className="p-6 space-y-5">
+        <div>
+          <h2 className="text-white flex items-center gap-2">
+            <Users className="w-5 h-5 text-accent-cyan" />
+            Analyze Developers
+          </h2>
+          <p className="text-white/40 text-sm mt-1">
+            Enter GitHub usernames to analyze developer expertise from commit history
+          </p>
+        </div>
 
-        <div className="space-y-4 mb-6">
+        <div className="space-y-3">
           {devInputs.map((dev, index) => (
-            <div key={index} className="flex gap-3">
-              <div className="flex-1">
-                <input
-                  type="text"
-                  placeholder="GitHub Username (required)"
-                  value={dev.username}
-                  onChange={(e) => updateDeveloperInput(index, 'username', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                           bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                           focus:ring-2 focus:ring-blue-500"
-                  disabled={loading}
-                />
-              </div>
-              <div className="flex-1">
-                <input
-                  type="text"
-                  placeholder="Owner (optional)"
-                  value={dev.owner}
-                  onChange={(e) => updateDeveloperInput(index, 'owner', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                           bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                           focus:ring-2 focus:ring-blue-500"
-                  disabled={loading}
-                />
-              </div>
-              <div className="flex-1">
-                <input
-                  type="text"
-                  placeholder="Repository (optional)"
-                  value={dev.repo}
-                  onChange={(e) => updateDeveloperInput(index, 'repo', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                           bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                           focus:ring-2 focus:ring-blue-500"
-                  disabled={loading}
-                />
-              </div>
+            <motion.div
+              key={index}
+              className="flex gap-2"
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <input
+                type="text"
+                placeholder="GitHub Username *"
+                value={dev.username}
+                onChange={(e) => updateDeveloperInput(index, 'username', e.target.value)}
+                className="input-dark flex-1"
+                disabled={loading}
+              />
+              <input
+                type="text"
+                placeholder="Owner (optional)"
+                value={dev.owner}
+                onChange={(e) => updateDeveloperInput(index, 'owner', e.target.value)}
+                className="input-dark flex-1"
+                disabled={loading}
+              />
+              <input
+                type="text"
+                placeholder="Repository (optional)"
+                value={dev.repo}
+                onChange={(e) => updateDeveloperInput(index, 'repo', e.target.value)}
+                className="input-dark flex-1"
+                disabled={loading}
+              />
               {devInputs.length > 1 && (
-                <button
+                <motion.button
                   onClick={() => removeDeveloperInput(index)}
                   disabled={loading}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                  className="w-10 h-10 rounded-xl bg-danger/10 text-danger hover:bg-danger/20 transition-colors flex items-center justify-center shrink-0"
+                  whileTap={{ scale: 0.9 }}
                 >
-                  ✕
-                </button>
+                  <X className="w-4 h-4" />
+                </motion.button>
               )}
-            </div>
+            </motion.div>
           ))}
         </div>
 
-        <div className="flex gap-3 mb-6">
+        <div className="flex gap-3">
           <button
             onClick={addDeveloperInput}
             disabled={loading || devInputs.length >= 10}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700
-                     dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700
-                     disabled:opacity-50 transition-colors"
+            className="btn-ghost text-sm disabled:opacity-40 flex items-center gap-1.5"
           >
-            + Add Developer
+            <Plus className="w-4 h-4" /> Add Developer
           </button>
-          <button
+          <motion.button
             onClick={handleAnalyze}
             disabled={loading}
-            className="flex-1 px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400
-                     text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            className="btn-accent flex-1 text-sm flex items-center justify-center"
+            whileTap={{ scale: 0.98 }}
           >
             {loading ? (
-              <>
-                <span className="animate-spin">⏳</span>
-                Analyzing...
-              </>
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Analyzing developers...
+              </span>
             ) : (
-              <>
-                <span>🔍</span>
-                Analyze Developers
-              </>
+              'Analyze Developers'
             )}
-          </button>
+          </motion.button>
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-red-700 dark:text-red-400">{error}</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-3 rounded-xl bg-danger/10 border border-danger/20"
+          >
+            <p className="text-danger text-sm">{error}</p>
+          </motion.div>
         )}
-      </div>
+      </SpotlightCard>
 
-      {/* Results Section */}
+      {/* Loading skeletons */}
+      {loading && developers.length === 0 && (
+        <div className="space-y-3">
+          {devInputs.filter(d => d.username.trim()).map((_, i) => (
+            <SkeletonDevCard key={i} />
+          ))}
+        </div>
+      )}
+
+      {/* Results */}
       {developers.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+        <div className="space-y-4">
+          <h3 className="text-white/30 text-xs font-mono uppercase tracking-wider">
             Analysis Results ({developers.length} developers)
           </h3>
 
-          <div className="space-y-4">
-            {developers.map((dev, index) => (
-              <div key={index} className="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
-                {/* Summary Card */}
-                <div className="p-4 bg-gray-50 dark:bg-gray-700/50">
-                  <div className="flex items-start gap-4">
-                    <img
-                      src={dev.avatar}
-                      alt={dev.username}
-                      className="w-16 h-16 rounded-full"
-                    />
-                    <div className="flex-1">
-                      <h4 className="font-bold text-lg text-gray-900 dark:text-white">
-                        {dev.username}
-                      </h4>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium
-                          ${dev.analysis.experienceLevel.tone === 'purple' ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300' : ''}
-                          ${dev.analysis.experienceLevel.tone === 'blue' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : ''}
-                          ${dev.analysis.experienceLevel.tone === 'green' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' : ''}
-                          ${dev.analysis.experienceLevel.tone === 'yellow' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300' : ''}
-                        `}>
-                          {dev.analysis.experienceLevel.level}
-                        </span>
-                        <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm">
-                          {dev.analysis.expertise.primaryIcon} {dev.analysis.expertise.primary}
-                        </span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <div className="text-gray-500 dark:text-gray-400">Commits</div>
-                          <div className="font-bold text-gray-900 dark:text-white">{dev.analysis.totalCommits}</div>
+          {developers.map((dev, index) => {
+            const tone = toneColors[dev.analysis.experienceLevel.tone] || toneColors.blue;
+
+            return (
+              <motion.div
+                key={index}
+                custom={index}
+                variants={cardVariants}
+                initial="hidden"
+                animate="show"
+              >
+                <SpotlightCard className="overflow-hidden">
+                  {/* Summary */}
+                  <div className="p-5">
+                    <div className="flex items-start gap-4">
+                      <img
+                        src={dev.avatar}
+                        alt={dev.username}
+                        className="w-14 h-14 rounded-xl ring-1 ring-white/10"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <h4 className="font-semibold text-white">{dev.username}</h4>
+                          <span className={`badge ${tone.bg} ${tone.text}`}>
+                            {dev.analysis.experienceLevel.level}
+                          </span>
+                          <span className="badge bg-white/[0.05] text-white/50">
+                            {dev.analysis.expertise.primaryIcon} {dev.analysis.expertise.primary}
+                          </span>
                         </div>
-                        <div>
-                          <div className="text-gray-500 dark:text-gray-400">On-Time %</div>
-                          <div className="font-bold text-gray-900 dark:text-white">{dev.analysis.onTimePercentage}%</div>
+
+                        <div className="grid grid-cols-4 gap-4 mt-3">
+                          {[
+                            { label: 'Commits', value: dev.analysis.totalCommits },
+                            { label: 'On-Time', value: `${dev.analysis.onTimePercentage}%` },
+                            { label: 'Consistency', value: dev.analysis.consistencyScore },
+                            { label: 'Avg Size', value: `${dev.analysis.avgCommitSize} ln` },
+                          ].map((stat, i) => (
+                            <div key={i}>
+                              <div className="stat-label">{stat.label}</div>
+                              <div className="text-sm font-semibold text-white">{stat.value}</div>
+                            </div>
+                          ))}
                         </div>
-                        <div>
-                          <div className="text-gray-500 dark:text-gray-400">Consistency</div>
-                          <div className="font-bold text-gray-900 dark:text-white">{dev.analysis.consistencyScore}</div>
-                        </div>
-                        <div>
-                          <div className="text-gray-500 dark:text-gray-400">Avg Size</div>
-                          <div className="font-bold text-gray-900 dark:text-white">{dev.analysis.avgCommitSize} lines</div>
-                        </div>
-                      </div>
-                      <div className="mt-3">
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Top Skills:</div>
-                        <div className="flex flex-wrap gap-1">
+
+                        <div className="flex flex-wrap gap-1.5 mt-3">
                           {dev.analysis.expertise.all.slice(0, 4).map((exp, i) => (
-                            <span key={i} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs">
+                            <span key={i} className="badge bg-white/[0.04] text-white/40">
                               {exp.icon} {exp.name}
                             </span>
                           ))}
                         </div>
                       </div>
-                    </div>
-                    <button
-                      onClick={() => toggleExpand(index)}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
-                    >
-                      {expandedDev === index ? 'Hide Details ▲' : 'Show Details ▼'}
-                    </button>
-                  </div>
-                </div>
 
-                {/* Detailed Charts - Expanded */}
-                {expandedDev === index && (
-                  <div className="p-6 bg-white dark:bg-gray-800 border-t border-gray-300 dark:border-gray-600">
-                    {/* Experience Badge */}
-                    <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 shadow-xl p-6 text-white mb-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-2xl font-bold mb-2">
-                            Experience: {dev.analysis.experienceLevel.level}
-                          </h3>
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <p className="text-white/80">Total Lines Changed</p>
-                              <p className="text-xl font-semibold">
-                                +{dev.analysis.totalLinesAdded.toLocaleString()} / -{dev.analysis.totalLinesDeleted.toLocaleString()}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-white/80">Avg Commit Size</p>
-                              <p className="text-xl font-semibold">{dev.analysis.avgCommitSize} lines</p>
+                      <motion.button
+                        onClick={() => toggleExpand(index)}
+                        className="btn-subtle text-xs shrink-0 flex items-center gap-1"
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {expandedDev === index ? 'Hide' : 'Details'}
+                        <motion.div animate={{ rotate: expandedDev === index ? 180 : 0 }}>
+                          <ChevronDown className="w-3 h-3" />
+                        </motion.div>
+                      </motion.button>
+                    </div>
+                  </div>
+
+                  {/* Expanded Charts */}
+                  <AnimatePresence>
+                    {expandedDev === index && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-5 pb-5 border-t border-white/[0.04] pt-5 space-y-5">
+                          {/* Experience banner */}
+                          <div className="rounded-2xl bg-gradient-to-r from-accent-cyan/10 to-purple/10 border border-white/[0.06] p-5">
+                            <div className="text-xs font-mono uppercase tracking-wider text-white/30 mb-2">Experience Level</div>
+                            <div className="text-xl font-bold text-white mb-3">{dev.analysis.experienceLevel.level}</div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <div className="stat-label">Lines Changed</div>
+                                <div className="text-sm font-semibold text-white">
+                                  <span className="text-success">+{dev.analysis.totalLinesAdded.toLocaleString()}</span>
+                                  {' / '}
+                                  <span className="text-danger">-{dev.analysis.totalLinesDeleted.toLocaleString()}</span>
+                                </div>
+                              </div>
+                              <div>
+                                <div className="stat-label">Avg Commit Size</div>
+                                <div className="text-sm font-semibold text-white">{dev.analysis.avgCommitSize} lines</div>
+                              </div>
                             </div>
                           </div>
+
+                          {/* Chart row 1 */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <ChartCard title="File Types">
+                              <ResponsiveContainer width="100%" height={200}>
+                                <PieChart>
+                                  <Pie data={dev.analysis.fileTypes} cx="50%" cy="50%" labelLine={false}
+                                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                    outerRadius={65} fill="#8884d8" dataKey="value"
+                                  >
+                                    {dev.analysis.fileTypes.map((_, i) => (
+                                      <Cell key={`cell-${i}`} fill={FILE_COLORS[i % FILE_COLORS.length]} />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip {...CHART_TOOLTIP} />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </ChartCard>
+
+                            <ChartCard title="Commit Sizes">
+                              <ResponsiveContainer width="100%" height={200}>
+                                <BarChart data={dev.analysis.commitSizeDistribution}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
+                                  <XAxis dataKey="range" tick={CHART_TICK} />
+                                  <YAxis tick={CHART_TICK} />
+                                  <Tooltip {...CHART_TOOLTIP} />
+                                  <Bar dataKey="count" fill="#70E6ED" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </ChartCard>
+
+                            <ChartCard title="Commit Frequency">
+                              <ResponsiveContainer width="100%" height={200}>
+                                <LineChart data={dev.analysis.consistencyTimeline}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
+                                  <XAxis dataKey="commit" tick={CHART_TICK} />
+                                  <YAxis tick={CHART_TICK} />
+                                  <Tooltip {...CHART_TOOLTIP} />
+                                  <Line type="monotone" dataKey="days" stroke="#A78BFA" strokeWidth={2} dot={false} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </ChartCard>
+                          </div>
+
+                          {/* Chart row 2 */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <ChartCard title="On-Time vs Late">
+                              <ResponsiveContainer width="100%" height={220}>
+                                <PieChart>
+                                  <Pie
+                                    data={[
+                                      { name: 'On-Time', value: dev.analysis.onTimeCount },
+                                      { name: 'Late', value: dev.analysis.lateCount },
+                                    ]}
+                                    cx="50%" cy="50%" labelLine={false}
+                                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                    outerRadius={80} fill="#8884d8" dataKey="value"
+                                  >
+                                    {COLORS.map((color, i) => (
+                                      <Cell key={`cell-${i}`} fill={color} />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip {...CHART_TOOLTIP} />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </ChartCard>
+
+                            <ChartCard title="Weekday Activity">
+                              <ResponsiveContainer width="100%" height={220}>
+                                <BarChart data={dev.analysis.weekdayData}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
+                                  <XAxis dataKey="day" tick={CHART_TICK} />
+                                  <YAxis tick={CHART_TICK} />
+                                  <Tooltip {...CHART_TOOLTIP} />
+                                  <Bar dataKey="commits" fill="#34D399" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </ChartCard>
+                          </div>
+
+                          {/* Hourly */}
+                          <ChartCard title="Hourly Activity">
+                            <ResponsiveContainer width="100%" height={220}>
+                              <BarChart data={dev.analysis.hourlyData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
+                                <XAxis dataKey="hour" tick={CHART_TICK} angle={-45} textAnchor="end" height={70} />
+                                <YAxis tick={CHART_TICK} />
+                                <Tooltip {...CHART_TOOLTIP} />
+                                <Bar dataKey="commits" fill="#FBBF24" radius={[4, 4, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </ChartCard>
                         </div>
-                      </div>
-                    </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </SpotlightCard>
+              </motion.div>
+            );
+          })}
 
-                    {/* First Row Charts */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                      {/* File Type Diversity */}
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-4">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                          📁 File Type Diversity
-                        </h4>
-                        <ResponsiveContainer width="100%" height={220}>
-                          <PieChart>
-                            <Pie
-                              data={dev.analysis.fileTypes}
-                              cx="50%"
-                              cy="50%"
-                              labelLine={false}
-                              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                              outerRadius={70}
-                              fill="#8884d8"
-                              dataKey="value"
-                            >
-                              {dev.analysis.fileTypes.map((_, i) => (
-                                <Cell key={`cell-${i}`} fill={FILE_COLORS[i % FILE_COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-
-                      {/* Commit Sizes */}
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-4">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                          📊 Commit Sizes
-                        </h4>
-                        <ResponsiveContainer width="100%" height={220}>
-                          <BarChart data={dev.analysis.commitSizeDistribution}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                            <XAxis dataKey="range" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 10 }} />
-                            <Tooltip />
-                            <Bar dataKey="count" fill="#3b82f6" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-
-                      {/* Commit Frequency */}
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-4">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                          📈 Commit Frequency
-                        </h4>
-                        <ResponsiveContainer width="100%" height={220}>
-                          <LineChart data={dev.analysis.consistencyTimeline}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                            <XAxis dataKey="commit" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 10 }} />
-                            <Tooltip />
-                            <Line type="monotone" dataKey="days" stroke="#8b5cf6" strokeWidth={2} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    {/* Second Row Charts */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* On-Time vs Late */}
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-4">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                          ⏰ On-Time vs Late
-                        </h4>
-                        <ResponsiveContainer width="100%" height={250}>
-                          <PieChart>
-                            <Pie
-                              data={[
-                                { name: 'On-Time', value: dev.analysis.onTimeCount },
-                                { name: 'Late', value: dev.analysis.lateCount },
-                              ]}
-                              cx="50%"
-                              cy="50%"
-                              labelLine={false}
-                              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                              outerRadius={90}
-                              fill="#8884d8"
-                              dataKey="value"
-                            >
-                              {COLORS.map((color, i) => (
-                                <Cell key={`cell-${i}`} fill={color} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-
-                      {/* Weekday Activity */}
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-4">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                          📅 Weekday Activity
-                        </h4>
-                        <ResponsiveContainer width="100%" height={250}>
-                          <BarChart data={dev.analysis.weekdayData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                            <XAxis dataKey="day" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 10 }} />
-                            <Tooltip />
-                            <Bar dataKey="commits" fill="#10b981" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    {/* Hourly Activity - Full Width */}
-                    <div className="mt-6 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-4">
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                        🕐 Hourly Activity
-                      </h4>
-                      <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={dev.analysis.hourlyData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                          <XAxis dataKey="hour" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={80} />
-                          <YAxis tick={{ fontSize: 10 }} />
-                          <Tooltip />
-                          <Bar dataKey="commits" fill="#f59e0b" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="flex gap-4 mt-8">
-            <button
-              onClick={previousStep}
-              className="px-6 py-3 border border-gray-300 dark:border-gray-600
-                       text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50
-                       dark:hover:bg-gray-700 transition-colors"
-            >
-              ← Back
-            </button>
-            <button
+          {/* Navigation */}
+          <div className="flex gap-3 pt-2">
+            <button onClick={previousStep} className="btn-ghost text-sm">Back</button>
+            <motion.button
               onClick={handleProceed}
-              className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white
-                       font-medium rounded-lg transition-colors"
+              className="btn-accent flex-1 text-sm"
+              whileTap={{ scale: 0.98 }}
             >
-              Proceed to Assignment →
-            </button>
+              Proceed to Assignment
+            </motion.button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ChartCard({ title, children }) {
+  return (
+    <div className="rounded-xl bg-white/[0.02] border border-white/[0.04] p-4">
+      <div className="text-xs font-mono uppercase tracking-wider text-white/25 mb-3">{title}</div>
+      {children}
     </div>
   );
 }

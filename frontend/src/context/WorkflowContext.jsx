@@ -1,5 +1,39 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 
+// Strip markdown formatting from LLM output
+function stripMd(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^[-*_]{3,}\s*$/gm, '');
+}
+
+// Recursively clean all string values in an object/array
+function cleanLLMData(data) {
+  if (typeof data === 'string') return stripMd(data);
+  if (Array.isArray(data)) return data.map(cleanLLMData);
+  if (data && typeof data === 'object') {
+    const cleaned = {};
+    for (const [key, value] of Object.entries(data)) {
+      cleaned[key] = cleanLLMData(value);
+    }
+    return cleaned;
+  }
+  return data;
+}
+
+// Safe fetch + JSON parse (handles empty/non-JSON responses)
+async function safeFetchJson(url, options) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  if (!text) return { success: false, error: 'Empty response from server. Please try again.' };
+  try { return JSON.parse(text); } catch { return { success: false, error: 'Invalid response from server. Please try again.' }; }
+}
+
 const WorkflowContext = createContext(null);
 
 export function WorkflowProvider({ children }) {
@@ -62,51 +96,91 @@ export function WorkflowProvider({ children }) {
     setGeneratedEpics: (epics, generatorUsed) => {
       setState(prev => ({
         ...prev,
-        generatedEpics: epics,
-        generatorUsed: generatorUsed || prev.generatorUsed
+        generatedEpics: cleanLLMData(epics),
+        generatorUsed: generatorUsed || prev.generatorUsed,
+        approvedEpics: [],
+        assignments: [],
+        workloadDistribution: {}
       }));
     },
 
     // Step 2: Epic Approval
     approveEpic: (epicIndex) => {
-      setState(prev => {
-        const epics = [...prev.generatedEpics];
-        const epic = epics[epicIndex];
-        epic.approved = true;
-        epic.user_stories?.forEach(story => {
-          story.approved = true;
-          story.ac_approved = true;
-          story.test_cases?.forEach(tc => tc.approved = true);
-        });
-        return { ...prev, generatedEpics: epics };
-      });
+      setState(prev => ({
+        ...prev,
+        generatedEpics: prev.generatedEpics.map((epic, ei) => {
+          if (ei !== epicIndex) return epic;
+          return {
+            ...epic,
+            approved: true,
+            user_stories: (epic.user_stories || []).map(story => ({
+              ...story,
+              approved: true,
+              ac_approved: true,
+              test_cases: (story.test_cases || []).map(tc => ({ ...tc, approved: true }))
+            }))
+          };
+        })
+      }));
     },
 
     approveStory: (epicIndex, storyIndex) => {
-      setState(prev => {
-        const epics = [...prev.generatedEpics];
-        const story = epics[epicIndex].user_stories[storyIndex];
-        story.approved = true;
-        story.ac_approved = true;
-        story.test_cases?.forEach(tc => tc.approved = true);
-        return { ...prev, generatedEpics: epics };
-      });
+      setState(prev => ({
+        ...prev,
+        generatedEpics: prev.generatedEpics.map((epic, ei) => {
+          if (ei !== epicIndex) return epic;
+          return {
+            ...epic,
+            user_stories: epic.user_stories.map((story, si) => {
+              if (si !== storyIndex) return story;
+              return {
+                ...story,
+                approved: true,
+                ac_approved: true,
+                test_cases: (story.test_cases || []).map(tc => ({ ...tc, approved: true }))
+              };
+            })
+          };
+        })
+      }));
     },
 
     approveAC: (epicIndex, storyIndex) => {
-      setState(prev => {
-        const epics = [...prev.generatedEpics];
-        epics[epicIndex].user_stories[storyIndex].ac_approved = true;
-        return { ...prev, generatedEpics: epics };
-      });
+      setState(prev => ({
+        ...prev,
+        generatedEpics: prev.generatedEpics.map((epic, ei) => {
+          if (ei !== epicIndex) return epic;
+          return {
+            ...epic,
+            user_stories: epic.user_stories.map((story, si) => {
+              if (si !== storyIndex) return story;
+              return { ...story, ac_approved: true };
+            })
+          };
+        })
+      }));
     },
 
     approveTestCase: (epicIndex, storyIndex, tcIndex) => {
-      setState(prev => {
-        const epics = [...prev.generatedEpics];
-        epics[epicIndex].user_stories[storyIndex].test_cases[tcIndex].approved = true;
-        return { ...prev, generatedEpics: epics };
-      });
+      setState(prev => ({
+        ...prev,
+        generatedEpics: prev.generatedEpics.map((epic, ei) => {
+          if (ei !== epicIndex) return epic;
+          return {
+            ...epic,
+            user_stories: epic.user_stories.map((story, si) => {
+              if (si !== storyIndex) return story;
+              return {
+                ...story,
+                test_cases: story.test_cases.map((tc, ti) => {
+                  if (ti !== tcIndex) return tc;
+                  return { ...tc, approved: true };
+                })
+              };
+            })
+          };
+        })
+      }));
     },
 
     cancelEpic: (epicIndex) => {
@@ -119,7 +193,8 @@ export function WorkflowProvider({ children }) {
     // Regeneration actions
     regenerateEpic: async (epicIndex, userRequirements = '') => {
       const epic = state.generatedEpics[epicIndex];
-      const res = await fetch('/api/regenerate', {
+      console.log('[Regen Epic] User requirements:', userRequirements);
+      const data = await safeFetchJson('/api/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -133,19 +208,22 @@ export function WorkflowProvider({ children }) {
           }
         })
       });
-      const data = await res.json();
       if (data.success) {
-        setState(prev => {
-          const epics = [...prev.generatedEpics];
-          const newEpic = data.data;
-          newEpic.approved = false;
-          newEpic.user_stories = (newEpic.user_stories || []).map(s => ({
-            ...s, approved: false, ac_approved: false,
-            test_cases: (s.test_cases || []).map(tc => ({ ...tc, approved: false }))
-          }));
-          epics[epicIndex] = newEpic;
-          return { ...prev, generatedEpics: epics };
-        });
+        const cleaned = cleanLLMData(data.data);
+        setState(prev => ({
+          ...prev,
+          generatedEpics: prev.generatedEpics.map((epic, ei) => {
+            if (ei !== epicIndex) return epic;
+            return {
+              ...cleaned,
+              approved: false,
+              user_stories: (cleaned.user_stories || []).map(s => ({
+                ...s, approved: false, ac_approved: false,
+                test_cases: (s.test_cases || []).map(tc => ({ ...tc, approved: false }))
+              }))
+            };
+          })
+        }));
       }
       return data;
     },
@@ -153,7 +231,8 @@ export function WorkflowProvider({ children }) {
     regenerateStory: async (epicIndex, storyIndex, userRequirements = '') => {
       const epic = state.generatedEpics[epicIndex];
       const story = epic.user_stories[storyIndex];
-      const res = await fetch('/api/regenerate', {
+      console.log('[Regen Story] User requirements:', userRequirements);
+      const data = await safeFetchJson('/api/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -170,17 +249,26 @@ export function WorkflowProvider({ children }) {
           }
         })
       });
-      const data = await res.json();
       if (data.success) {
-        setState(prev => {
-          const epics = [...prev.generatedEpics];
-          const newStory = data.data;
-          newStory.approved = false;
-          newStory.ac_approved = false;
-          newStory.test_cases = (newStory.test_cases || []).map(tc => ({ ...tc, approved: false }));
-          epics[epicIndex].user_stories[storyIndex] = newStory;
-          return { ...prev, generatedEpics: epics };
-        });
+        const cleaned = cleanLLMData(data.data);
+        setState(prev => ({
+          ...prev,
+          generatedEpics: prev.generatedEpics.map((epic, ei) => {
+            if (ei !== epicIndex) return epic;
+            return {
+              ...epic,
+              user_stories: epic.user_stories.map((story, si) => {
+                if (si !== storyIndex) return story;
+                return {
+                  ...cleaned,
+                  approved: false,
+                  ac_approved: false,
+                  test_cases: (cleaned.test_cases || []).map(tc => ({ ...tc, approved: false }))
+                };
+              })
+            };
+          })
+        }));
       }
       return data;
     },
@@ -188,7 +276,8 @@ export function WorkflowProvider({ children }) {
     regenerateAC: async (epicIndex, storyIndex, userRequirements = '') => {
       const epic = state.generatedEpics[epicIndex];
       const story = epic.user_stories[storyIndex];
-      const res = await fetch('/api/regenerate', {
+      console.log('[Regen AC] User requirements:', userRequirements);
+      const data = await safeFetchJson('/api/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -205,14 +294,21 @@ export function WorkflowProvider({ children }) {
           }
         })
       });
-      const data = await res.json();
       if (data.success) {
-        setState(prev => {
-          const epics = [...prev.generatedEpics];
-          epics[epicIndex].user_stories[storyIndex].acceptance_criteria = data.data;
-          epics[epicIndex].user_stories[storyIndex].ac_approved = false;
-          return { ...prev, generatedEpics: epics };
-        });
+        const cleaned = cleanLLMData(data.data);
+        setState(prev => ({
+          ...prev,
+          generatedEpics: prev.generatedEpics.map((epic, ei) => {
+            if (ei !== epicIndex) return epic;
+            return {
+              ...epic,
+              user_stories: epic.user_stories.map((story, si) => {
+                if (si !== storyIndex) return story;
+                return { ...story, acceptance_criteria: cleaned, ac_approved: false };
+              })
+            };
+          })
+        }));
       }
       return data;
     },
@@ -221,7 +317,8 @@ export function WorkflowProvider({ children }) {
       const epic = state.generatedEpics[epicIndex];
       const story = epic.user_stories[storyIndex];
       const tc = story.test_cases[tcIndex];
-      const res = await fetch('/api/regenerate', {
+      console.log('[Regen TC] User requirements:', userRequirements);
+      const data = await safeFetchJson('/api/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -240,15 +337,27 @@ export function WorkflowProvider({ children }) {
           }
         })
       });
-      const data = await res.json();
       if (data.success) {
-        setState(prev => {
-          const epics = [...prev.generatedEpics];
-          const newTC = data.data;
-          newTC.approved = false;
-          epics[epicIndex].user_stories[storyIndex].test_cases[tcIndex] = newTC;
-          return { ...prev, generatedEpics: epics };
-        });
+        const cleaned = cleanLLMData(data.data);
+        setState(prev => ({
+          ...prev,
+          generatedEpics: prev.generatedEpics.map((epic, ei) => {
+            if (ei !== epicIndex) return epic;
+            return {
+              ...epic,
+              user_stories: epic.user_stories.map((story, si) => {
+                if (si !== storyIndex) return story;
+                return {
+                  ...story,
+                  test_cases: story.test_cases.map((tc, ti) => {
+                    if (ti !== tcIndex) return tc;
+                    return { ...cleaned, approved: false };
+                  })
+                };
+              })
+            };
+          })
+        }));
       }
       return data;
     },
@@ -287,36 +396,61 @@ export function WorkflowProvider({ children }) {
 
     reassignEpic: (epicId, newDeveloperUsername) => {
       setState(prev => {
-        const assignments = [...prev.assignments];
-        const workload = { ...prev.workloadDistribution };
+        const assignmentIndex = prev.assignments.findIndex(a => a.epic.epic_id === epicId);
+        if (assignmentIndex === -1) return prev;
 
-        const assignmentIndex = assignments.findIndex(a => a.epic.epic_id === epicId);
-        if (assignmentIndex !== -1) {
-          const assignment = assignments[assignmentIndex];
-          const oldDev = assignment.developer.username;
-          const storyPoints = assignment.epic.totalStoryPoints;
+        const oldAssignment = prev.assignments[assignmentIndex];
+        const oldDev = oldAssignment.developer.username;
+        const storyPoints = oldAssignment.epic.totalStoryPoints;
+        const newDev = prev.developers.find(d => d.username === newDeveloperUsername);
+        if (!newDev) return prev;
 
-          // Update workload
-          workload[oldDev] -= storyPoints;
-          workload[newDeveloperUsername] = (workload[newDeveloperUsername] || 0) + storyPoints;
+        // Recalculate expertise match for the new developer
+        const epicType = oldAssignment.epic.classification?.primary || "Full Stack";
+        const allExpertise = newDev.analysis?.expertise?.all || [];
+        const expertiseMatch = allExpertise.find(e => e.name === epicType);
+        const maxScore = Math.max(...allExpertise.map(e => e.score), 1);
 
-          // Update assignment
-          const newDev = prev.developers.find(d => d.username === newDeveloperUsername);
-          if (newDev) {
-            assignment.developer = {
+        let expertisePoints = 0;
+        if (expertiseMatch) {
+          expertisePoints = Math.round((expertiseMatch.score / maxScore) * 50);
+        } else if (newDev.analysis?.expertise?.primary === "Full Stack") {
+          expertisePoints = Math.min(30, Math.round((allExpertise.length / 5) * 30));
+        }
+
+        const experienceMap = { "Senior": 30, "Mid-Level": 20, "Junior": 10, "Beginner": 5 };
+        const experiencePoints = experienceMap[newDev.analysis?.experienceLevel?.level] || 5;
+        const recalcScore = expertisePoints + experiencePoints;
+        const hasExpertise = expertisePoints > 0;
+
+        const newAssignments = prev.assignments.map((a, i) => {
+          if (i !== assignmentIndex) return a;
+          return {
+            ...a,
+            developer: {
               username: newDev.username,
               expertise: newDev.analysis.expertise.primary,
               experienceLevel: newDev.analysis.experienceLevel.level,
               avatar: newDev.avatar
-            };
-            assignment.confidence = "manual";
-          }
-        }
+            },
+            score: recalcScore,
+            breakdown: {
+              expertiseMatch: expertisePoints,
+              experienceLevel: experiencePoints,
+              workloadBalance: 0
+            },
+            confidence: hasExpertise ? "manual-verified" : "manual"
+          };
+        });
 
         return {
           ...prev,
-          assignments,
-          workloadDistribution: workload
+          assignments: newAssignments,
+          workloadDistribution: {
+            ...prev.workloadDistribution,
+            [oldDev]: (prev.workloadDistribution[oldDev] || 0) - storyPoints,
+            [newDeveloperUsername]: (prev.workloadDistribution[newDeveloperUsername] || 0) + storyPoints
+          }
         };
       });
     },

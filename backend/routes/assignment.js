@@ -51,7 +51,7 @@ router.post('/auto-assign', async (req, res) => {
 // POST /api/reassign - Manually reassign an epic
 router.post('/reassign', async (req, res) => {
   try {
-    const { assignments, epicId, newDeveloperUsername, workloadDistribution } = req.body;
+    const { assignments, epicId, newDeveloperUsername, workloadDistribution, developers } = req.body;
 
     if (!assignments || !epicId || !newDeveloperUsername || !workloadDistribution) {
       return res.status(400).json({
@@ -64,7 +64,8 @@ router.post('/reassign', async (req, res) => {
       assignments,
       epicId,
       newDeveloperUsername,
-      workloadDistribution
+      workloadDistribution,
+      developers
     );
 
     res.json(result);

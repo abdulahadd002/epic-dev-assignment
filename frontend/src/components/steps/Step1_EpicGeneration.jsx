@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
+import { motion } from 'framer-motion';
+import { Zap, ChevronRight, Loader2 } from 'lucide-react';
+import SpotlightCard from '../shared/SpotlightCard';
 
 const exampleProjects = [
   "Build a fitness tracking mobile application with workout logging, nutrition tracking, and progress analytics",
@@ -8,6 +11,15 @@ const exampleProjects = [
   "Build a social media dashboard with post scheduling, analytics, and multi-platform integration",
   "Create a healthcare patient management system with appointments, medical records, and billing"
 ];
+
+const containerVariants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.06 } }
+};
+const itemVariants = {
+  hidden: { opacity: 0, y: 8 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] } }
+};
 
 export default function Step1_EpicGeneration() {
   const {
@@ -36,7 +48,10 @@ export default function Step1_EpicGeneration() {
         body: JSON.stringify({ description: projectDescription })
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      if (!text) throw new Error('Empty response from server. The AI generation may have timed out — please try again.');
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error('Invalid response from server. Please try again.'); }
 
       if (!data.success) {
         throw new Error(data.error || 'Failed to generate epics');
@@ -52,133 +67,129 @@ export default function Step1_EpicGeneration() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          Generate Epic Documentation
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400 mb-6">
-          Describe your project and we'll generate comprehensive epics, user stories, acceptance criteria, and test cases using AI.
+    <div className="max-w-3xl mx-auto space-y-6">
+      {/* Hero */}
+      <div className="text-center mb-2">
+        <h2 className="gradient-text-animated inline-block">Generate Epic Documentation</h2>
+        <p className="text-white/40 text-sm mt-2 max-w-lg mx-auto">
+          Describe your project and AI will generate comprehensive epics, user stories, acceptance criteria, and test cases.
         </p>
+      </div>
 
-        {/* Prompt Structure Guide */}
-        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <details className="group">
-            <summary className="cursor-pointer font-medium text-blue-900 dark:text-blue-300 flex items-center gap-2">
-              <span className="group-open:rotate-90 transition-transform">▶</span>
-              💡 How to Write an Effective Project Description
-            </summary>
-            <div className="mt-3 text-sm text-blue-800 dark:text-blue-300 space-y-3">
-              <div>
-                <strong>1. Project Overview</strong>
-                <p className="text-blue-700 dark:text-blue-400 ml-4">Start with 1-3 sentences describing your application's purpose and key characteristics.</p>
-                <code className="block ml-4 mt-1 text-xs bg-white dark:bg-gray-800 p-2 rounded">
-                  "Create a modern, responsive fitness tracking web application that helps users monitor their daily health..."
-                </code>
-              </div>
-
-              <div>
-                <strong>2. Core Features (Required)</strong>
-                <p className="text-blue-700 dark:text-blue-400 ml-4">List your main features as numbered items. Each feature will become an epic!</p>
-                <code className="block ml-4 mt-1 text-xs bg-white dark:bg-gray-800 p-2 rounded whitespace-pre">
-{`Core Features Required:
-1. User Authentication - Allow users to create accounts...
-2. Dashboard - Display a comprehensive overview...
-3. Workout Logging - Enable users to log exercises...`}
-                </code>
-              </div>
-
-              <div>
-                <strong>3. Feature Details</strong>
-                <p className="text-blue-700 dark:text-blue-400 ml-4">Add bullet points under each feature for specific requirements.</p>
-                <code className="block ml-4 mt-1 text-xs bg-white dark:bg-gray-800 p-2 rounded whitespace-pre">
-{`2. Dashboard - Display overview with:
-   - Daily calorie intake vs. burned calories
-   - Water intake tracking with goal progress
-   - Steps walked with daily goal indicator`}
-                </code>
-              </div>
-
-              <div>
-                <strong>4. Additional Details (Optional)</strong>
-                <p className="text-blue-700 dark:text-blue-400 ml-4">Include design requirements, technical stack, or performance needs if relevant.</p>
-              </div>
-
-              <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
-                <p className="text-blue-900 dark:text-blue-300">
-                  <strong>💡 Tip:</strong> The more features you list (up to 15), the more epics will be generated. Each numbered feature = 1 epic!
-                </p>
-              </div>
+      {/* Main card */}
+      <SpotlightCard className="p-6 space-y-6">
+        {/* Guide */}
+        <details className="group">
+          <summary className="cursor-pointer text-sm font-medium text-accent-cyan/80 flex items-center gap-2 hover:text-accent-cyan transition-colors">
+            <ChevronRight className="w-4 h-4 group-open:rotate-90 transition-transform duration-200" />
+            How to write an effective project description
+          </summary>
+          <div className="mt-4 space-y-4 text-sm text-white/50">
+            <div>
+              <span className="text-white/70 font-medium">1. Project Overview</span>
+              <p className="mt-1 ml-4">Start with 1-3 sentences describing your application's purpose.</p>
+              <code className="block ml-4 mt-1.5 text-xs font-mono p-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-accent-lime/80">
+                "Create a modern fitness tracking web app that helps users monitor their daily health..."
+              </code>
             </div>
-          </details>
-        </div>
+            <div>
+              <span className="text-white/70 font-medium">2. Core Features</span>
+              <p className="mt-1 ml-4">List main features as numbered items. Each feature = 1 epic.</p>
+              <code className="block ml-4 mt-1.5 text-xs font-mono p-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-accent-lime/80 whitespace-pre">{`1. User Authentication - accounts, login, OAuth
+2. Dashboard - overview, analytics, stats
+3. Workout Logging - exercises, sets, history`}</code>
+            </div>
+            <div>
+              <span className="text-white/70 font-medium">3. Feature Details</span>
+              <p className="mt-1 ml-4">Add bullet points under each feature for specific requirements.</p>
+            </div>
+            <div className="pt-3 border-t border-white/[0.06]">
+              <p className="text-accent-cyan/60 text-xs font-mono">
+                TIP: More features (up to 15) = more epics generated. Each numbered feature = 1 epic.
+              </p>
+            </div>
+          </div>
+        </details>
 
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        {/* Textarea */}
+        <div>
+          <label className="block text-xs font-mono uppercase tracking-wider text-white/30 mb-2">
             Project Description
           </label>
           <textarea
             value={projectDescription}
             onChange={(e) => setProjectDescription(e.target.value)}
-            placeholder="E.g., Build a modern task management application with real-time collaboration, notifications, and analytics..."
-            className="w-full h-40 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg
-                     bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                     focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                     resize-none"
+            placeholder="Build a modern task management application with real-time collaboration, notifications, and analytics..."
+            className="input-dark w-full h-40 resize-none"
             disabled={loading}
           />
         </div>
 
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Example Projects
+        {/* Examples */}
+        <div>
+          <label className="block text-xs font-mono uppercase tracking-wider text-white/30 mb-3">
+            Quick Start Templates
           </label>
-          <div className="space-y-2">
+          <motion.div
+            className="grid gap-2"
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+          >
             {exampleProjects.map((example, index) => (
-              <button
+              <motion.button
                 key={index}
+                variants={itemVariants}
                 onClick={() => setProjectDescription(example)}
-                className="w-full text-left px-4 py-3 border border-gray-300 dark:border-gray-600
-                         rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700
-                         transition-colors text-sm text-gray-700 dark:text-gray-300"
+                className="w-full text-left px-4 py-3 rounded-xl text-sm text-white/50
+                         bg-white/[0.02] border border-white/[0.04]
+                         hover:bg-white/[0.05] hover:border-white/[0.1] hover:text-white/70
+                         transition-all duration-300"
                 disabled={loading}
+                whileHover={{ x: 4 }}
+                whileTap={{ scale: 0.99 }}
               >
                 {example}
-              </button>
+              </motion.button>
             ))}
-          </div>
+          </motion.div>
         </div>
 
+        {/* Error */}
         {error && (
-          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-red-700 dark:text-red-400">{error}</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-3 rounded-xl bg-danger/10 border border-danger/20"
+          >
+            <p className="text-danger text-sm">{error}</p>
+          </motion.div>
         )}
 
-        <button
+        {/* Generate button */}
+        <motion.button
           onClick={handleGenerate}
           disabled={loading || !projectDescription.trim()}
-          className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400
-                   text-white font-medium rounded-lg transition-colors
-                   flex items-center justify-center gap-2"
+          className="btn-accent w-full flex items-center justify-center gap-2 text-sm"
+          whileTap={{ scale: 0.98 }}
         >
           {loading ? (
-            <>
-              <span className="animate-spin">⏳</span>
-              Generating epics...
-            </>
+            <span className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Generating epics...</span>
+            </span>
           ) : (
-            <>
-              <span>✨</span>
+            <span className="flex items-center gap-2">
+              <Zap className="w-4 h-4" />
               Generate Epics
-            </>
+            </span>
           )}
-        </button>
+        </motion.button>
 
-        <p className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-          Number of epics generated will match the number of features in your description (3-15 epics). Each epic includes user stories, acceptance criteria, and test cases.
+        <p className="text-center text-xs text-white/25">
+          Generates 3-15 epics based on features described. Each epic includes user stories, acceptance criteria, and test cases.
         </p>
-      </div>
+      </SpotlightCard>
     </div>
   );
 }
