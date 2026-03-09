@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
+import { useThemeContext } from '../../App';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Users, Loader2, ChevronDown } from 'lucide-react';
 import SpotlightCard from '../shared/SpotlightCard';
@@ -11,14 +12,6 @@ import {
 
 const COLORS = ['#34D399', '#F87171'];
 const FILE_COLORS = ['#70E6ED', '#A78BFA', '#34D399', '#FBBF24', '#F87171', '#6B7280', '#14B8A6', '#818CF8'];
-
-const CHART_GRID = '#1a1a1a';
-const CHART_TICK = { fontSize: 10, fill: 'rgba(255,255,255,0.3)' };
-const CHART_TOOLTIP = {
-  contentStyle: { background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' },
-  itemStyle: { color: 'rgba(255,255,255,0.7)' },
-  labelStyle: { color: 'rgba(255,255,255,0.4)' }
-};
 
 const toneColors = {
   purple: { bg: 'bg-purple/15', text: 'text-purple' },
@@ -37,6 +30,20 @@ const cardVariants = {
 
 export default function Step3_DeveloperAnalysis() {
   const { developers, setDevelopers, nextStep, previousStep } = useWorkflow();
+  const { isDark } = useThemeContext();
+
+  const chartGrid = isDark ? '#1a1a1a' : 'rgba(0,0,0,0.06)';
+  const chartTick = { fontSize: 10, fill: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(28,25,23,0.4)' };
+  const chartTooltip = {
+    contentStyle: {
+      background: isDark ? '#111' : '#F2F0EB',
+      border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+      borderRadius: '10px', fontSize: '12px',
+      boxShadow: isDark ? '0 8px 32px rgba(0,0,0,0.5)' : '0 8px 32px rgba(0,0,0,0.08)'
+    },
+    itemStyle: { color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(28,25,23,0.7)' },
+    labelStyle: { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(28,25,23,0.4)' }
+  };
 
   const [devInputs, setDevInputs] = useState([{ username: '', owner: '', repo: '' }]);
   const [loading, setLoading] = useState(false);
@@ -326,7 +333,7 @@ export default function Step3_DeveloperAnalysis() {
                                       <Cell key={`cell-${i}`} fill={FILE_COLORS[i % FILE_COLORS.length]} />
                                     ))}
                                   </Pie>
-                                  <Tooltip {...CHART_TOOLTIP} />
+                                  <Tooltip {...chartTooltip} />
                                 </PieChart>
                               </ResponsiveContainer>
                             </ChartCard>
@@ -334,10 +341,10 @@ export default function Step3_DeveloperAnalysis() {
                             <ChartCard title="Commit Sizes">
                               <ResponsiveContainer width="100%" height={200}>
                                 <BarChart data={dev.analysis.commitSizeDistribution}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
-                                  <XAxis dataKey="range" tick={CHART_TICK} />
-                                  <YAxis tick={CHART_TICK} />
-                                  <Tooltip {...CHART_TOOLTIP} />
+                                  <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
+                                  <XAxis dataKey="range" tick={chartTick} />
+                                  <YAxis tick={chartTick} />
+                                  <Tooltip {...chartTooltip} />
                                   <Bar dataKey="count" fill="#70E6ED" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                               </ResponsiveContainer>
@@ -346,10 +353,10 @@ export default function Step3_DeveloperAnalysis() {
                             <ChartCard title="Commit Frequency">
                               <ResponsiveContainer width="100%" height={200}>
                                 <LineChart data={dev.analysis.consistencyTimeline}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
-                                  <XAxis dataKey="commit" tick={CHART_TICK} />
-                                  <YAxis tick={CHART_TICK} />
-                                  <Tooltip {...CHART_TOOLTIP} />
+                                  <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
+                                  <XAxis dataKey="commit" tick={chartTick} />
+                                  <YAxis tick={chartTick} />
+                                  <Tooltip {...chartTooltip} />
                                   <Line type="monotone" dataKey="days" stroke="#A78BFA" strokeWidth={2} dot={false} />
                                 </LineChart>
                               </ResponsiveContainer>
@@ -374,7 +381,7 @@ export default function Step3_DeveloperAnalysis() {
                                       <Cell key={`cell-${i}`} fill={color} />
                                     ))}
                                   </Pie>
-                                  <Tooltip {...CHART_TOOLTIP} />
+                                  <Tooltip {...chartTooltip} />
                                 </PieChart>
                               </ResponsiveContainer>
                             </ChartCard>
@@ -382,10 +389,10 @@ export default function Step3_DeveloperAnalysis() {
                             <ChartCard title="Weekday Activity">
                               <ResponsiveContainer width="100%" height={220}>
                                 <BarChart data={dev.analysis.weekdayData}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
-                                  <XAxis dataKey="day" tick={CHART_TICK} />
-                                  <YAxis tick={CHART_TICK} />
-                                  <Tooltip {...CHART_TOOLTIP} />
+                                  <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
+                                  <XAxis dataKey="day" tick={chartTick} />
+                                  <YAxis tick={chartTick} />
+                                  <Tooltip {...chartTooltip} />
                                   <Bar dataKey="commits" fill="#34D399" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                               </ResponsiveContainer>
@@ -396,10 +403,10 @@ export default function Step3_DeveloperAnalysis() {
                           <ChartCard title="Hourly Activity">
                             <ResponsiveContainer width="100%" height={220}>
                               <BarChart data={dev.analysis.hourlyData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
-                                <XAxis dataKey="hour" tick={CHART_TICK} angle={-45} textAnchor="end" height={70} />
-                                <YAxis tick={CHART_TICK} />
-                                <Tooltip {...CHART_TOOLTIP} />
+                                <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
+                                <XAxis dataKey="hour" tick={chartTick} angle={-45} textAnchor="end" height={70} />
+                                <YAxis tick={chartTick} />
+                                <Tooltip {...chartTooltip} />
                                 <Bar dataKey="commits" fill="#FBBF24" radius={[4, 4, 0, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
