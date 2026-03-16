@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
-import { useThemeContext } from '../../App';
+import { useDevelopers } from '../../hooks/useDevelopers';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Users, Loader2, ChevronDown } from 'lucide-react';
+import { Plus, X, Users, Loader2, ChevronDown, Check, UserPlus } from 'lucide-react';
 import SpotlightCard from '../shared/SpotlightCard';
 import { SkeletonDevCard } from '../shared/Skeleton';
 import {
@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 
 const COLORS = ['#34D399', '#F87171'];
-const FILE_COLORS = ['#70E6ED', '#A78BFA', '#34D399', '#FBBF24', '#F87171', '#6B7280', '#14B8A6', '#818CF8'];
+const FILE_COLORS = ['#0EA5B0', '#7C5DC7', '#34D399', '#B45309', '#F87171', '#6B7280', '#14B8A6', '#818CF8'];
 
 const toneColors = {
   purple: { bg: 'bg-purple/15', text: 'text-purple' },
@@ -28,27 +28,69 @@ const cardVariants = {
   })
 };
 
+const chartGrid = 'var(--border-subtle)';
+const chartTick = { fontSize: 10, fill: 'var(--text-tertiary)' };
+const chartTooltip = {
+  contentStyle: {
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border-card)',
+    borderRadius: '10px', fontSize: '12px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.08)'
+  },
+  itemStyle: { color: 'var(--text-primary)' },
+  labelStyle: { color: 'var(--text-secondary)' }
+};
+
 export default function Step3_DeveloperAnalysis() {
   const { developers, setDevelopers, nextStep, previousStep } = useWorkflow();
-  const { isDark } = useThemeContext();
+  const { developers: rosterDevs } = useDevelopers();
 
-  const chartGrid = isDark ? '#1a1a1a' : 'rgba(0,0,0,0.06)';
-  const chartTick = { fontSize: 10, fill: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(28,25,23,0.4)' };
-  const chartTooltip = {
-    contentStyle: {
-      background: isDark ? '#111' : '#F2F0EB',
-      border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-      borderRadius: '10px', fontSize: '12px',
-      boxShadow: isDark ? '0 8px 32px rgba(0,0,0,0.5)' : '0 8px 32px rgba(0,0,0,0.08)'
-    },
-    itemStyle: { color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(28,25,23,0.7)' },
-    labelStyle: { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(28,25,23,0.4)' }
-  };
+  // Track which roster devs are selected
+  const [selectedRoster, setSelectedRoster] = useState(() => {
+    const set = new Set();
+    for (const d of developers) {
+      if (rosterDevs.some((r) => r.username === d.username)) {
+        set.add(d.username);
+      }
+    }
+    return set;
+  });
 
+  // New developer analysis inputs
+  const [showNewForm, setShowNewForm] = useState(false);
   const [devInputs, setDevInputs] = useState([{ username: '', owner: '', repo: '' }]);
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState('');
   const [error, setError] = useState(null);
   const [expandedDev, setExpandedDev] = useState(null);
+
+  // Newly analyzed devs (not from roster)
+  const [freshAnalyzed, setFreshAnalyzed] = useState(() => {
+    return developers.filter((d) => !rosterDevs.some((r) => r.username === d.username));
+  });
+
+  // Merge selected roster devs + freshly analyzed into workflow developers
+  const mergedDevelopers = useMemo(() => {
+    const selected = rosterDevs.filter((r) => selectedRoster.has(r.username));
+    const seen = new Set();
+    const merged = [];
+    for (const d of selected) {
+      if (!seen.has(d.username)) { merged.push(d); seen.add(d.username); }
+    }
+    for (const d of freshAnalyzed) {
+      if (!seen.has(d.username)) { merged.push(d); seen.add(d.username); }
+    }
+    return merged;
+  }, [rosterDevs, selectedRoster, freshAnalyzed]);
+
+  const toggleRosterDev = (username) => {
+    setSelectedRoster((prev) => {
+      const next = new Set(prev);
+      if (next.has(username)) next.delete(username);
+      else next.add(username);
+      return next;
+    });
+  };
 
   const addDeveloperInput = () => {
     setDevInputs([...devInputs, { username: '', owner: '', repo: '' }]);
@@ -71,14 +113,48 @@ export default function Step3_DeveloperAnalysis() {
       return;
     }
 
+    const toAnalyze = validInputs.filter(
+      (d) => !rosterDevs.some((r) => r.username === d.username.trim())
+    );
+    const alreadyInRoster = validInputs.filter(
+      (d) => rosterDevs.some((r) => r.username === d.username.trim())
+    );
+
+    if (alreadyInRoster.length > 0) {
+      setSelectedRoster((prev) => {
+        const next = new Set(prev);
+        alreadyInRoster.forEach((d) => next.add(d.username.trim()));
+        return next;
+      });
+    }
+
+    if (toAnalyze.length === 0) {
+      setDevInputs([{ username: '', owner: '', repo: '' }]);
+      setShowNewForm(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    setLoadingProgress('Connecting to GitHub...');
+
+    const progressSteps = [
+      { delay: 3000, msg: 'Fetching repositories...' },
+      { delay: 8000, msg: 'Analyzing commit history...' },
+      { delay: 15000, msg: 'Detecting expertise from file patterns...' },
+      { delay: 25000, msg: 'Calculating experience levels...' },
+      { delay: 40000, msg: 'Processing detailed commit data...' },
+      { delay: 60000, msg: 'Almost done, finalizing analysis...' },
+    ];
+    const timers = progressSteps.map(({ delay, msg }) =>
+      setTimeout(() => setLoadingProgress(msg), delay)
+    );
 
     try {
       const response = await fetch('/api/analyze-developers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ developers: validInputs })
+        body: JSON.stringify({ developers: toAnalyze })
       });
 
       const text = await response.text();
@@ -87,113 +163,209 @@ export default function Step3_DeveloperAnalysis() {
       try { data = JSON.parse(text); } catch { throw new Error('Invalid response from server. Please try again.'); }
       if (!data.success) throw new Error(data.error || 'Failed to analyze developers');
 
-      setDevelopers(data.developers);
-      if (data.developers.length === 0) {
+      if (data.developers.length === 0 && alreadyInRoster.length === 0) {
         setError('No developers could be analyzed. Check usernames and try again.');
+      } else {
+        setFreshAnalyzed((prev) => {
+          const seen = new Set(prev.map((d) => d.username));
+          const added = data.developers.filter((d) => !seen.has(d.username));
+          return [...prev, ...added];
+        });
+        setDevInputs([{ username: '', owner: '', repo: '' }]);
+        setShowNewForm(false);
       }
     } catch (err) {
       setError(err.message);
     } finally {
+      timers.forEach(clearTimeout);
       setLoading(false);
+      setLoadingProgress('');
     }
   };
 
   const handleProceed = () => {
-    if (developers.length === 0) {
-      alert('Please analyze at least one developer before proceeding');
+    if (mergedDevelopers.length === 0) {
+      setError('Please select or analyze at least one developer before proceeding');
       return;
     }
+    setDevelopers(mergedDevelopers);
     nextStep();
+  };
+
+  const removeFreshDev = (username) => {
+    setFreshAnalyzed((prev) => prev.filter((d) => d.username !== username));
   };
 
   const toggleExpand = (index) => {
     setExpandedDev(expandedDev === index ? null : index);
   };
 
+  const allDisplayDevs = mergedDevelopers;
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      {/* Input Section */}
-      <SpotlightCard className="p-6 space-y-5">
-        <div>
-          <h2 className="text-white flex items-center gap-2">
-            <Users className="w-5 h-5 text-accent-cyan" />
-            Analyze Developers
-          </h2>
-          <p className="text-white/40 text-sm mt-1">
-            Enter GitHub usernames to analyze developer expertise from commit history
-          </p>
-        </div>
+      {/* Roster Selection */}
+      {rosterDevs.length > 0 && (
+        <SpotlightCard className="p-6 space-y-4">
+          <div>
+            <h2 className="text-heading flex items-center gap-2">
+              <Users className="w-5 h-5 text-accent-cyan" />
+              Select from Team Roster
+            </h2>
+            <p className="text-muted text-sm mt-1">
+              These developers are already analyzed. Click to select them for this project.
+            </p>
+          </div>
 
-        <div className="space-y-3">
-          {devInputs.map((dev, index) => (
-            <motion.div
-              key={index}
-              className="flex gap-2"
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <input
-                type="text"
-                placeholder="GitHub Username *"
-                value={dev.username}
-                onChange={(e) => updateDeveloperInput(index, 'username', e.target.value)}
-                className="input-dark flex-1"
-                disabled={loading}
-              />
-              <input
-                type="text"
-                placeholder="Owner (optional)"
-                value={dev.owner}
-                onChange={(e) => updateDeveloperInput(index, 'owner', e.target.value)}
-                className="input-dark flex-1"
-                disabled={loading}
-              />
-              <input
-                type="text"
-                placeholder="Repository (optional)"
-                value={dev.repo}
-                onChange={(e) => updateDeveloperInput(index, 'repo', e.target.value)}
-                className="input-dark flex-1"
-                disabled={loading}
-              />
-              {devInputs.length > 1 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {rosterDevs.map((dev) => {
+              const isSelected = selectedRoster.has(dev.username);
+              return (
                 <motion.button
-                  onClick={() => removeDeveloperInput(index)}
-                  disabled={loading}
-                  className="w-10 h-10 rounded-xl bg-danger/10 text-danger hover:bg-danger/20 transition-colors flex items-center justify-center shrink-0"
-                  whileTap={{ scale: 0.9 }}
+                  key={dev.username}
+                  onClick={() => toggleRosterDev(dev.username)}
+                  className={`flex items-center gap-3 rounded-xl p-3 text-left transition-all duration-200 border ${
+                    isSelected
+                      ? 'bg-accent-cyan/10 border-accent-cyan/30'
+                      : 'bg-card-theme border-default hover:bg-[var(--bg-card-hover)]'
+                  }`}
+                  whileTap={{ scale: 0.98 }}
                 >
-                  <X className="w-4 h-4" />
+                  <div className="relative">
+                    <img
+                      src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
+                      alt={dev.username}
+                      className="w-10 h-10 rounded-lg ring-1 ring-default"
+                    />
+                    {isSelected && (
+                      <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent-cyan flex items-center justify-center">
+                        <Check className="w-3 h-3" style={{ color: '#fff' }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-heading truncate">{dev.username}</span>
+                      {dev.experience_level && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-card-theme text-subtle">
+                          {dev.experience_level}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-subtle truncate block">
+                      {dev.primary_expertise || 'Full Stack'}
+                    </span>
+                  </div>
                 </motion.button>
-              )}
-            </motion.div>
-          ))}
+              );
+            })}
+          </div>
+
+          <div className="text-xs text-faint">
+            {selectedRoster.size} of {rosterDevs.length} selected
+          </div>
+        </SpotlightCard>
+      )}
+
+      {/* Analyze New Developers */}
+      <SpotlightCard className="p-6 space-y-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-heading flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-accent-cyan" />
+              {rosterDevs.length > 0 ? 'Analyze New Developer' : 'Analyze Developers'}
+            </h2>
+            <p className="text-muted text-sm mt-1">
+              {rosterDevs.length > 0
+                ? 'Add a new developer not yet in your roster'
+                : 'Enter GitHub usernames to analyze developer expertise from commit history'}
+            </p>
+          </div>
+          {rosterDevs.length > 0 && !showNewForm && (
+            <motion.button
+              onClick={() => setShowNewForm(true)}
+              className="btn-ghost text-sm flex items-center gap-1.5"
+              whileTap={{ scale: 0.95 }}
+            >
+              <Plus className="w-4 h-4" /> Add New
+            </motion.button>
+          )}
         </div>
 
-        <div className="flex gap-3">
-          <button
-            onClick={addDeveloperInput}
-            disabled={loading || devInputs.length >= 10}
-            className="btn-ghost text-sm disabled:opacity-40 flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" /> Add Developer
-          </button>
-          <motion.button
-            onClick={handleAnalyze}
-            disabled={loading}
-            className="btn-accent flex-1 text-sm flex items-center justify-center"
-            whileTap={{ scale: 0.98 }}
-          >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" /> Analyzing developers...
-              </span>
-            ) : (
-              'Analyze Developers'
-            )}
-          </motion.button>
-        </div>
+        {(showNewForm || rosterDevs.length === 0) && (
+          <>
+            <div className="space-y-3">
+              {devInputs.map((dev, index) => (
+                <motion.div
+                  key={index}
+                  className="flex gap-2"
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <input
+                    type="text"
+                    placeholder="GitHub Username *"
+                    value={dev.username}
+                    onChange={(e) => updateDeveloperInput(index, 'username', e.target.value)}
+                    className="input-dark flex-1"
+                    disabled={loading}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Owner (optional)"
+                    value={dev.owner}
+                    onChange={(e) => updateDeveloperInput(index, 'owner', e.target.value)}
+                    className="input-dark flex-1"
+                    disabled={loading}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Repository (optional)"
+                    value={dev.repo}
+                    onChange={(e) => updateDeveloperInput(index, 'repo', e.target.value)}
+                    className="input-dark flex-1"
+                    disabled={loading}
+                  />
+                  {devInputs.length > 1 && (
+                    <motion.button
+                      onClick={() => removeDeveloperInput(index)}
+                      disabled={loading}
+                      className="w-10 h-10 rounded-xl bg-danger/10 text-danger hover:bg-danger/20 transition-colors flex items-center justify-center shrink-0"
+                      whileTap={{ scale: 0.9 }}
+                    >
+                      <X className="w-4 h-4" />
+                    </motion.button>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={addDeveloperInput}
+                disabled={loading || devInputs.length >= 10}
+                className="btn-ghost text-sm disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" /> Add Developer
+              </button>
+              <motion.button
+                onClick={handleAnalyze}
+                disabled={loading}
+                className="btn-accent flex-1 text-sm flex items-center justify-center"
+                whileTap={{ scale: 0.98 }}
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> {loadingProgress || 'Analyzing developers...'}
+                  </span>
+                ) : (
+                  'Analyze & Add'
+                )}
+              </motion.button>
+            </div>
+          </>
+        )}
 
         {error && (
           <motion.div
@@ -207,7 +379,7 @@ export default function Step3_DeveloperAnalysis() {
       </SpotlightCard>
 
       {/* Loading skeletons */}
-      {loading && developers.length === 0 && (
+      {loading && allDisplayDevs.length === 0 && (
         <div className="space-y-3">
           {devInputs.filter(d => d.username.trim()).map((_, i) => (
             <SkeletonDevCard key={i} />
@@ -215,19 +387,20 @@ export default function Step3_DeveloperAnalysis() {
         </div>
       )}
 
-      {/* Results */}
-      {developers.length > 0 && (
+      {/* Results — selected roster + freshly analyzed */}
+      {allDisplayDevs.length > 0 && (
         <div className="space-y-4">
-          <h3 className="text-white/30 text-xs font-mono uppercase tracking-wider">
-            Analysis Results ({developers.length} developers)
+          <h3 className="text-subtle text-xs font-mono uppercase tracking-wider">
+            Selected Developers ({allDisplayDevs.length})
           </h3>
 
-          {developers.map((dev, index) => {
-            const tone = toneColors[dev.analysis.experienceLevel.tone] || toneColors.blue;
+          {allDisplayDevs.map((dev, index) => {
+            const tone = toneColors[dev.analysis?.experienceLevel?.tone] || toneColors.blue;
+            const isFromRoster = rosterDevs.some((r) => r.username === dev.username);
 
             return (
               <motion.div
-                key={index}
+                key={dev.username}
                 custom={index}
                 variants={cardVariants}
                 initial="hidden"
@@ -238,60 +411,86 @@ export default function Step3_DeveloperAnalysis() {
                   <div className="p-5">
                     <div className="flex items-start gap-4">
                       <img
-                        src={dev.avatar}
+                        src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
                         alt={dev.username}
-                        className="w-14 h-14 rounded-xl ring-1 ring-white/10"
+                        className="w-14 h-14 rounded-xl ring-1 ring-default"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <h4 className="font-semibold text-white">{dev.username}</h4>
-                          <span className={`badge ${tone.bg} ${tone.text}`}>
-                            {dev.analysis.experienceLevel.level}
-                          </span>
-                          <span className="badge bg-white/[0.05] text-white/50">
-                            {dev.analysis.expertise.primaryIcon} {dev.analysis.expertise.primary}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-4 mt-3">
-                          {[
-                            { label: 'Commits', value: dev.analysis.totalCommits },
-                            { label: 'On-Time', value: `${dev.analysis.onTimePercentage}%` },
-                            { label: 'Consistency', value: dev.analysis.consistencyScore },
-                            { label: 'Avg Size', value: `${dev.analysis.avgCommitSize} ln` },
-                          ].map((stat, i) => (
-                            <div key={i}>
-                              <div className="stat-label">{stat.label}</div>
-                              <div className="text-sm font-semibold text-white">{stat.value}</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="flex flex-wrap gap-1.5 mt-3">
-                          {dev.analysis.expertise.all.slice(0, 4).map((exp, i) => (
-                            <span key={i} className="badge bg-white/[0.04] text-white/40">
-                              {exp.icon} {exp.name}
+                          <h4 className="font-semibold text-heading">{dev.username}</h4>
+                          {isFromRoster && (
+                            <span className="badge bg-accent-cyan/15 text-accent-cyan text-[10px]">
+                              From Roster
                             </span>
-                          ))}
+                          )}
+                          {dev.analysis?.experienceLevel && (
+                            <span className={`badge ${tone.bg} ${tone.text}`}>
+                              {dev.analysis.experienceLevel.level}
+                            </span>
+                          )}
+                          {dev.analysis?.expertise && (
+                            <span className="badge bg-card-theme text-muted">
+                              {dev.analysis.expertise.primaryIcon} {dev.analysis.expertise.primary}
+                            </span>
+                          )}
                         </div>
+
+                        {dev.analysis?.totalCommits != null && (
+                          <div className="grid grid-cols-4 gap-4 mt-3">
+                            {[
+                              { label: 'Commits', value: dev.analysis.totalCommits },
+                              { label: 'On-Time', value: `${dev.analysis.onTimePercentage}%` },
+                              { label: 'Consistency', value: dev.analysis.consistencyScore },
+                              { label: 'Avg Size', value: `${dev.analysis.avgCommitSize} ln` },
+                            ].map((stat, i) => (
+                              <div key={i}>
+                                <div className="stat-label">{stat.label}</div>
+                                <div className="text-sm font-semibold text-heading">{stat.value}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {dev.analysis?.expertise?.all && (
+                          <div className="flex flex-wrap gap-1.5 mt-3">
+                            {dev.analysis.expertise.all.slice(0, 4).map((exp, i) => (
+                              <span key={i} className="badge bg-card-theme text-subtle">
+                                {exp.icon} {exp.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
-                      <motion.button
-                        onClick={() => toggleExpand(index)}
-                        className="btn-subtle text-xs shrink-0 flex items-center gap-1"
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        {expandedDev === index ? 'Hide' : 'Details'}
-                        <motion.div animate={{ rotate: expandedDev === index ? 180 : 0 }}>
-                          <ChevronDown className="w-3 h-3" />
-                        </motion.div>
-                      </motion.button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {dev.analysis?.totalCommits != null && (
+                          <motion.button
+                            onClick={() => toggleExpand(index)}
+                            className="btn-subtle text-xs flex items-center gap-1"
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            {expandedDev === index ? 'Hide' : 'Details'}
+                            <motion.div animate={{ rotate: expandedDev === index ? 180 : 0 }}>
+                              <ChevronDown className="w-3 h-3" />
+                            </motion.div>
+                          </motion.button>
+                        )}
+                        {!isFromRoster && (
+                          <motion.button
+                            onClick={() => removeFreshDev(dev.username)}
+                            className="btn-subtle text-xs text-danger/70 hover:text-danger"
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            <X className="w-3 h-3" />
+                          </motion.button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   {/* Expanded Charts */}
                   <AnimatePresence>
-                    {expandedDev === index && (
+                    {expandedDev === index && dev.analysis && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
@@ -299,15 +498,15 @@ export default function Step3_DeveloperAnalysis() {
                         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                         className="overflow-hidden"
                       >
-                        <div className="px-5 pb-5 border-t border-white/[0.04] pt-5 space-y-5">
+                        <div className="px-5 pb-5 pt-5 space-y-5" style={{ borderTop: '1px solid var(--border-card)' }}>
                           {/* Experience banner */}
-                          <div className="rounded-2xl bg-gradient-to-r from-accent-cyan/10 to-purple/10 border border-white/[0.06] p-5">
-                            <div className="text-xs font-mono uppercase tracking-wider text-white/30 mb-2">Experience Level</div>
-                            <div className="text-xl font-bold text-white mb-3">{dev.analysis.experienceLevel.level}</div>
+                          <div className="rounded-2xl bg-gradient-to-r from-accent-cyan/10 to-purple/10 border border-default p-5">
+                            <div className="text-xs font-mono uppercase tracking-wider text-subtle mb-2">Experience Level</div>
+                            <div className="text-xl font-bold text-heading mb-3">{dev.analysis.experienceLevel.level}</div>
                             <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <div className="stat-label">Lines Changed</div>
-                                <div className="text-sm font-semibold text-white">
+                                <div className="text-sm font-semibold">
                                   <span className="text-success">+{dev.analysis.totalLinesAdded.toLocaleString()}</span>
                                   {' / '}
                                   <span className="text-danger">-{dev.analysis.totalLinesDeleted.toLocaleString()}</span>
@@ -315,7 +514,7 @@ export default function Step3_DeveloperAnalysis() {
                               </div>
                               <div>
                                 <div className="stat-label">Avg Commit Size</div>
-                                <div className="text-sm font-semibold text-white">{dev.analysis.avgCommitSize} lines</div>
+                                <div className="text-sm font-semibold text-heading">{dev.analysis.avgCommitSize} lines</div>
                               </div>
                             </div>
                           </div>
@@ -345,7 +544,7 @@ export default function Step3_DeveloperAnalysis() {
                                   <XAxis dataKey="range" tick={chartTick} />
                                   <YAxis tick={chartTick} />
                                   <Tooltip {...chartTooltip} />
-                                  <Bar dataKey="count" fill="#70E6ED" radius={[4, 4, 0, 0]} />
+                                  <Bar dataKey="count" fill="#0EA5B0" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                               </ResponsiveContainer>
                             </ChartCard>
@@ -357,7 +556,7 @@ export default function Step3_DeveloperAnalysis() {
                                   <XAxis dataKey="commit" tick={chartTick} />
                                   <YAxis tick={chartTick} />
                                   <Tooltip {...chartTooltip} />
-                                  <Line type="monotone" dataKey="days" stroke="#A78BFA" strokeWidth={2} dot={false} />
+                                  <Line type="monotone" dataKey="days" stroke="#7C5DC7" strokeWidth={2} dot={false} />
                                 </LineChart>
                               </ResponsiveContainer>
                             </ChartCard>
@@ -407,7 +606,7 @@ export default function Step3_DeveloperAnalysis() {
                                 <XAxis dataKey="hour" tick={chartTick} angle={-45} textAnchor="end" height={70} />
                                 <YAxis tick={chartTick} />
                                 <Tooltip {...chartTooltip} />
-                                <Bar dataKey="commits" fill="#FBBF24" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="commits" fill="#B45309" radius={[4, 4, 0, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </ChartCard>
@@ -433,14 +632,28 @@ export default function Step3_DeveloperAnalysis() {
           </div>
         </div>
       )}
+
+      {/* Navigation when no devs selected yet */}
+      {allDisplayDevs.length === 0 && (
+        <div className="flex gap-3 pt-2">
+          <button onClick={previousStep} className="btn-ghost text-sm">Back</button>
+          <motion.button
+            onClick={handleProceed}
+            className="btn-accent flex-1 text-sm opacity-50"
+            whileTap={{ scale: 0.98 }}
+          >
+            Proceed to Assignment
+          </motion.button>
+        </div>
+      )}
     </div>
   );
 }
 
 function ChartCard({ title, children }) {
   return (
-    <div className="rounded-xl bg-white/[0.02] border border-white/[0.04] p-4">
-      <div className="text-xs font-mono uppercase tracking-wider text-white/25 mb-3">{title}</div>
+    <div className="rounded-xl bg-card-theme border border-default p-4">
+      <div className="text-xs font-mono uppercase tracking-wider text-faint mb-3">{title}</div>
       {children}
     </div>
   );

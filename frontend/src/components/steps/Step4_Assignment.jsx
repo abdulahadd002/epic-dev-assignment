@@ -141,8 +141,8 @@ export default function Step4_Assignment() {
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <SpotlightCard className="p-6">
-        <h2 className="text-white">Epic Assignment Dashboard</h2>
-        <p className="text-white/40 text-sm mt-1 mb-6">
+        <h2 className="text-heading">Epic Assignment Dashboard</h2>
+        <p className="text-muted text-sm mt-1 mb-6">
           Auto-assign epics to developers based on expertise matching and workload balancing
         </p>
 
@@ -207,7 +207,7 @@ export default function Step4_Assignment() {
                   <div className="text-sm text-warning font-medium">
                     {stats.mismatches} expertise mismatch{stats.mismatches > 1 ? 'es' : ''} detected
                   </div>
-                  <div className="text-xs text-white/35 mt-0.5">
+                  <div className="text-xs text-subtle mt-0.5">
                     Some epics are assigned to developers with different expertise areas.
                   </div>
                 </div>
@@ -217,7 +217,7 @@ export default function Step4_Assignment() {
             {/* Controls */}
             <div className="flex flex-wrap gap-2 items-center">
               <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/25" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint" />
                 <input
                   type="text"
                   placeholder="Search epics or developers..."
@@ -252,7 +252,7 @@ export default function Step4_Assignment() {
             </div>
 
             {searchTerm && (
-              <div className="text-xs text-white/30">
+              <div className="text-xs text-subtle">
                 Showing {filteredAndSortedAssignments.length} of {assignments.length} assignments
               </div>
             )}
@@ -263,7 +263,7 @@ export default function Step4_Assignment() {
       {/* Workload Distribution */}
       {assignments.length > 0 && (
         <SpotlightCard className="p-6">
-          <h3 className="text-xs font-mono uppercase tracking-wider text-white/30 mb-4">Workload Distribution</h3>
+          <h3 className="text-xs font-mono uppercase tracking-wider text-subtle mb-4">Workload Distribution</h3>
           <div className="space-y-3">
             {Object.entries(workloadDistribution).map(([username, points], i) => {
               const maxPoints = Math.max(...Object.values(workloadDistribution));
@@ -279,29 +279,29 @@ export default function Step4_Assignment() {
                   transition={{ delay: i * 0.06, duration: 0.35 }}
                 >
                   <div className="flex items-center gap-2 w-40">
-                    {dev && <img src={dev.avatar} alt={username} className="w-7 h-7 rounded-lg ring-1 ring-white/10" />}
-                    <span className="text-sm text-white/60 truncate">{username}</span>
+                    {dev && <img src={dev.avatar} alt={username} className="w-7 h-7 rounded-lg ring-1 ring-default" />}
+                    <span className="text-sm text-muted truncate">{username}</span>
                   </div>
-                  <div className="flex-1 h-8 bg-white/[0.02] rounded-lg overflow-hidden relative border border-white/[0.04]">
+                  <div className="flex-1 h-8 bg-card-theme rounded-lg overflow-hidden relative border border-default">
                     <motion.div
                       className="h-full bg-gradient-to-r from-accent-cyan/30 to-accent-cyan/10 flex items-center justify-end px-3"
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.max(percentage, 15)}%` }}
                       transition={{ duration: 0.6, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}
                     >
-                      <span className="text-xs font-mono text-white/70">{points} pts</span>
+                      <span className="text-xs font-mono text-heading">{points} pts</span>
                     </motion.div>
                     {percentage < 15 && (
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-white/50">{points} pts</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-muted">{points} pts</span>
                     )}
                   </div>
-                  <span className="w-12 text-right text-xs font-mono text-white/25">{percentage.toFixed(0)}%</span>
+                  <span className="w-12 text-right text-xs font-mono text-faint">{percentage.toFixed(0)}%</span>
                 </motion.div>
               );
             })}
           </div>
 
-          <div className="mt-4 pt-3 border-t border-white/[0.04] flex items-center gap-2">
+          <div className="mt-4 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid var(--border-card)' }}>
             {(() => {
               const values = Object.values(workloadDistribution);
               const max = Math.max(...values);
@@ -314,7 +314,7 @@ export default function Step4_Assignment() {
                   <span className={`badge ${isBalanced ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'}`}>
                     {isBalanced ? 'Balanced' : 'Unbalanced'}
                   </span>
-                  <span className="text-xs text-white/30">{diff.toFixed(0)}% difference</span>
+                  <span className="text-xs text-subtle">{diff.toFixed(0)}% difference</span>
                 </>
               );
             })()}
@@ -325,7 +325,7 @@ export default function Step4_Assignment() {
       {/* Assignments */}
       {assignments.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-xs font-mono uppercase tracking-wider text-white/30">Epic Assignments</h3>
+          <h3 className="text-xs font-mono uppercase tracking-wider text-subtle">Epic Assignments</h3>
 
           {filteredAndSortedAssignments.map((assignment, i) => {
             const mismatch = hasExpertiseMismatch(assignment);
@@ -354,18 +354,18 @@ export default function Step4_Assignment() {
                         </span>
                       )}
                     </div>
-                    <h4 className="font-medium text-white">{assignment.epic.epic_title}</h4>
-                    <p className="text-xs text-white/35 mt-1">
+                    <h4 className="font-medium text-heading">{assignment.epic.epic_title}</h4>
+                    <p className="text-xs text-subtle mt-1">
                       {assignment.epic.classification?.primary} · {assignment.epic.totalStoryPoints} pts · {assignment.epic.userStoriesCount} stories
                     </p>
                   </div>
 
                   {/* Developer */}
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-                    <img src={assignment.developer.avatar} alt={assignment.developer.username} className="w-10 h-10 rounded-xl ring-1 ring-white/10" />
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-card-theme border border-default">
+                    <img src={assignment.developer.avatar} alt={assignment.developer.username} className="w-10 h-10 rounded-xl ring-1 ring-default" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-white">{assignment.developer.username}</div>
-                      <div className="text-xs text-white/35">
+                      <div className="text-sm font-medium text-heading">{assignment.developer.username}</div>
+                      <div className="text-xs text-subtle">
                         {assignment.developer.expertise} · {assignment.developer.experienceLevel} · Score: <span className="text-accent-cyan font-mono">{assignment.score}</span>
                       </div>
                     </div>
@@ -409,28 +409,28 @@ export default function Step4_Assignment() {
                         transition={{ duration: 0.3 }}
                         className="overflow-hidden"
                       >
-                        <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] space-y-2">
-                          <div className="text-xs font-mono uppercase tracking-wider text-white/25 mb-2">
+                        <div className="p-4 rounded-xl bg-card-theme border border-default space-y-2">
+                          <div className="text-xs font-mono uppercase tracking-wider text-faint mb-2">
                             User Stories ({assignment.epic.user_stories.length})
                           </div>
                           {assignment.epic.user_stories.map((story, idx) => (
-                            <div key={idx} className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                            <div key={idx} className="p-3 rounded-lg bg-card-theme border border-default">
                               <div className="flex items-start gap-2">
                                 <span className="badge bg-indigo/15 text-indigo shrink-0">{story.story_id || `US-${idx + 1}`}</span>
                                 <div className="flex-1">
-                                  <div className="text-sm text-white/70">{story.story_title || 'Untitled Story'}</div>
-                                  {story.story_points && <div className="text-xs text-white/30 mt-0.5">{story.story_points} points</div>}
+                                  <div className="text-sm text-heading">{story.story_title || 'Untitled Story'}</div>
+                                  {story.story_points && <div className="text-xs text-subtle mt-0.5">{story.story_points} points</div>}
                                   {story.acceptance_criteria && (
                                     <div className="mt-2">
-                                      <div className="text-[10px] font-mono uppercase tracking-wider text-white/20 mb-1">Acceptance Criteria</div>
-                                      <p className="text-xs text-white/40 whitespace-pre-wrap">{story.acceptance_criteria}</p>
+                                      <div className="text-[10px] font-mono uppercase tracking-wider text-faint mb-1">Acceptance Criteria</div>
+                                      <p className="text-xs text-muted whitespace-pre-wrap">{story.acceptance_criteria}</p>
                                     </div>
                                   )}
                                 </div>
                               </div>
                             </div>
                           ))}
-                          <div className="text-xs text-white/30 pt-1">Total: {assignment.epic.totalStoryPoints} story points</div>
+                          <div className="text-xs text-subtle pt-1">Total: {assignment.epic.totalStoryPoints} story points</div>
                         </div>
                       </motion.div>
                     )}
@@ -446,8 +446,8 @@ export default function Step4_Assignment() {
                         transition={{ duration: 0.3 }}
                         className="overflow-hidden"
                       >
-                        <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-                          <div className="text-xs font-mono uppercase tracking-wider text-white/25 mb-3">Score Breakdown</div>
+                        <div className="p-4 rounded-xl bg-card-theme border border-default">
+                          <div className="text-xs font-mono uppercase tracking-wider text-faint mb-3">Score Breakdown</div>
                           <div className="space-y-2 text-sm">
                             {[
                               { label: 'Expertise Match', value: assignment.breakdown?.expertiseMatch, max: 50 },
@@ -455,8 +455,8 @@ export default function Step4_Assignment() {
                               { label: 'Workload Balance', value: assignment.breakdown?.workloadBalance, max: 20 },
                             ].map((item, j) => (
                               <div key={j} className="flex items-center gap-3">
-                                <span className="text-xs text-white/35 w-32">{item.label}</span>
-                                <div className="flex-1 h-2 bg-white/[0.04] rounded-full overflow-hidden">
+                                <span className="text-xs text-subtle w-32">{item.label}</span>
+                                <div className="flex-1 h-2 bg-card-theme rounded-full overflow-hidden">
                                   <motion.div
                                     className="h-full bg-accent-cyan/40 rounded-full"
                                     initial={{ width: 0 }}
@@ -464,13 +464,13 @@ export default function Step4_Assignment() {
                                     transition={{ duration: 0.5, delay: j * 0.1 }}
                                   />
                                 </div>
-                                <span className="text-xs font-mono text-white/50 w-16 text-right">
+                                <span className="text-xs font-mono text-muted w-16 text-right">
                                   {Math.round(item.value || 0)}/{item.max}
                                 </span>
                               </div>
                             ))}
-                            <div className="pt-2 mt-1 border-t border-white/[0.04] flex justify-between">
-                              <span className="text-xs font-medium text-white/50">Total</span>
+                            <div className="pt-2 mt-1 flex justify-between" style={{ borderTop: '1px solid var(--border-card)' }}>
+                              <span className="text-xs font-medium text-muted">Total</span>
                               <span className="text-sm font-bold text-accent-cyan font-mono">{assignment.score}/100</span>
                             </div>
                           </div>
@@ -482,12 +482,12 @@ export default function Step4_Assignment() {
                   {/* Alternatives */}
                   {assignment.alternatives?.length > 0 && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-white/20">Alt:</span>
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-faint">Alt:</span>
                       {assignment.alternatives.map((alt, j) => (
                         <motion.button
                           key={j}
                           onClick={() => handleReassign(assignment.epic.epic_id, alt.username)}
-                          className="badge bg-white/[0.04] text-white/45 hover:bg-white/[0.08] hover:text-white/60 transition-colors cursor-pointer"
+                          className="badge bg-card-theme text-muted hover:bg-[var(--bg-card-hover)] hover:text-heading transition-colors cursor-pointer"
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                         >
@@ -502,7 +502,7 @@ export default function Step4_Assignment() {
           })}
 
           {filteredAndSortedAssignments.length === 0 && (
-            <div className="text-center py-12 text-white/30 text-sm">
+            <div className="text-center py-12 text-subtle text-sm">
               No assignments match your filters
             </div>
           )}
@@ -513,7 +513,7 @@ export default function Step4_Assignment() {
       <div className="flex gap-3 items-center">
         <button onClick={previousStep} className="btn-ghost text-sm">Back</button>
         {assignments.length > 0 && (
-          <div className="flex-1 text-center text-xs text-white/25">
+          <div className="flex-1 text-center text-xs text-faint">
             Assignment complete. Export or modify as needed.
           </div>
         )}

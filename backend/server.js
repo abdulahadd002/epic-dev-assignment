@@ -4,6 +4,8 @@ import cors from 'cors';
 import epicsRouter from './routes/epics.js';
 import developersRouter from './routes/developers.js';
 import assignmentRouter from './routes/assignment.js';
+import jiraRouter from './routes/jira.js';
+import syncRouter from './routes/sync.js';
 
 const app = express();
 const PORT = process.env.PORT || 3003;
@@ -16,6 +18,8 @@ app.use(express.json({ limit: '50mb' }));
 app.use('/api', epicsRouter);
 app.use('/api', developersRouter);
 app.use('/api', assignmentRouter);
+app.use('/api', jiraRouter);
+app.use('/api', syncRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

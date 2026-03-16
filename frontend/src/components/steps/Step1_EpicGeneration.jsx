@@ -30,6 +30,7 @@ export default function Step1_EpicGeneration() {
   } = useWorkflow();
 
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState('');
   const [error, setError] = useState(null);
 
   const handleGenerate = async () => {
@@ -40,6 +41,18 @@ export default function Step1_EpicGeneration() {
 
     setLoading(true);
     setError(null);
+    setLoadingProgress('Sending to AI...');
+
+    const progressSteps = [
+      { delay: 3000, msg: 'AI is analyzing your description...' },
+      { delay: 8000, msg: 'Generating epics & user stories...' },
+      { delay: 15000, msg: 'Creating acceptance criteria & test cases...' },
+      { delay: 25000, msg: 'Finalizing documentation...' },
+      { delay: 40000, msg: 'Almost there, AI is polishing output...' },
+    ];
+    const timers = progressSteps.map(({ delay, msg }) =>
+      setTimeout(() => setLoadingProgress(msg), delay)
+    );
 
     try {
       const response = await fetch('/api/generate', {
@@ -62,7 +75,9 @@ export default function Step1_EpicGeneration() {
     } catch (err) {
       setError(err.message);
     } finally {
+      timers.forEach(clearTimeout);
       setLoading(false);
+      setLoadingProgress('');
     }
   };
 
@@ -71,7 +86,7 @@ export default function Step1_EpicGeneration() {
       {/* Hero */}
       <div className="text-center mb-2">
         <h2 className="gradient-text-animated inline-block">Generate Epic Documentation</h2>
-        <p className="text-white/40 text-sm mt-2 max-w-lg mx-auto">
+        <p className="text-muted text-sm mt-2 max-w-lg mx-auto">
           Describe your project and AI will generate comprehensive epics, user stories, acceptance criteria, and test cases.
         </p>
       </div>
@@ -80,31 +95,31 @@ export default function Step1_EpicGeneration() {
       <SpotlightCard className="p-6 space-y-6">
         {/* Guide */}
         <details className="group">
-          <summary className="cursor-pointer text-sm font-medium text-accent-cyan/80 flex items-center gap-2 hover:text-accent-cyan transition-colors">
+          <summary className="cursor-pointer text-sm font-medium text-accent-cyan flex items-center gap-2 hover:opacity-80 transition-colors">
             <ChevronRight className="w-4 h-4 group-open:rotate-90 transition-transform duration-200" />
             How to write an effective project description
           </summary>
-          <div className="mt-4 space-y-4 text-sm text-white/50">
+          <div className="mt-4 space-y-4 text-sm text-muted">
             <div>
-              <span className="text-white/70 font-medium">1. Project Overview</span>
+              <span className="text-heading font-medium">1. Project Overview</span>
               <p className="mt-1 ml-4">Start with 1-3 sentences describing your application's purpose.</p>
-              <code className="block ml-4 mt-1.5 text-xs font-mono p-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-accent-lime/80">
+              <code className="block ml-4 mt-1.5 text-xs font-mono p-2.5 rounded-lg text-accent-lime" style={{ background: 'var(--code-bg)', border: '1px solid var(--code-border)' }}>
                 "Create a modern fitness tracking web app that helps users monitor their daily health..."
               </code>
             </div>
             <div>
-              <span className="text-white/70 font-medium">2. Core Features</span>
+              <span className="text-heading font-medium">2. Core Features</span>
               <p className="mt-1 ml-4">List main features as numbered items. Each feature = 1 epic.</p>
-              <code className="block ml-4 mt-1.5 text-xs font-mono p-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-accent-lime/80 whitespace-pre">{`1. User Authentication - accounts, login, OAuth
+              <code className="block ml-4 mt-1.5 text-xs font-mono p-2.5 rounded-lg text-accent-lime whitespace-pre" style={{ background: 'var(--code-bg)', border: '1px solid var(--code-border)' }}>{`1. User Authentication - accounts, login, OAuth
 2. Dashboard - overview, analytics, stats
 3. Workout Logging - exercises, sets, history`}</code>
             </div>
             <div>
-              <span className="text-white/70 font-medium">3. Feature Details</span>
+              <span className="text-heading font-medium">3. Feature Details</span>
               <p className="mt-1 ml-4">Add bullet points under each feature for specific requirements.</p>
             </div>
-            <div className="pt-3 border-t border-white/[0.06]">
-              <p className="text-accent-cyan/60 text-xs font-mono">
+            <div className="pt-3" style={{ borderTop: '1px solid var(--border-card)' }}>
+              <p className="text-accent-cyan text-xs font-mono opacity-70">
                 TIP: More features (up to 15) = more epics generated. Each numbered feature = 1 epic.
               </p>
             </div>
@@ -113,7 +128,7 @@ export default function Step1_EpicGeneration() {
 
         {/* Textarea */}
         <div>
-          <label className="block text-xs font-mono uppercase tracking-wider text-white/30 mb-2">
+          <label className="block text-xs font-mono uppercase tracking-wider text-subtle mb-2">
             Project Description
           </label>
           <textarea
@@ -127,7 +142,7 @@ export default function Step1_EpicGeneration() {
 
         {/* Examples */}
         <div>
-          <label className="block text-xs font-mono uppercase tracking-wider text-white/30 mb-3">
+          <label className="block text-xs font-mono uppercase tracking-wider text-subtle mb-3">
             Quick Start Templates
           </label>
           <motion.div
@@ -141,9 +156,9 @@ export default function Step1_EpicGeneration() {
                 key={index}
                 variants={itemVariants}
                 onClick={() => setProjectDescription(example)}
-                className="w-full text-left px-4 py-3 rounded-xl text-sm text-white/50
-                         bg-white/[0.02] border border-white/[0.04]
-                         hover:bg-white/[0.05] hover:border-white/[0.1] hover:text-white/70
+                className="w-full text-left px-4 py-3 rounded-xl text-sm text-muted
+                         bg-card-theme border border-default
+                         hover:bg-[var(--bg-card-hover)] hover:border-[var(--border-hover)] hover:text-heading
                          transition-all duration-300"
                 disabled={loading}
                 whileHover={{ x: 4 }}
@@ -176,7 +191,7 @@ export default function Step1_EpicGeneration() {
           {loading ? (
             <span className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Generating epics...</span>
+              <span>{loadingProgress || 'Generating epics...'}</span>
             </span>
           ) : (
             <span className="flex items-center gap-2">
@@ -186,7 +201,7 @@ export default function Step1_EpicGeneration() {
           )}
         </motion.button>
 
-        <p className="text-center text-xs text-white/25">
+        <p className="text-center text-xs text-faint">
           Generates 3-15 epics based on features described. Each epic includes user stories, acceptance criteria, and test cases.
         </p>
       </SpotlightCard>

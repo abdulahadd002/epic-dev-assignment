@@ -139,16 +139,16 @@ export default function Step2_EpicApproval() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-white">Review & Approve Epics</h2>
-          <p className="text-white/40 text-sm mt-1">
+          <h2 className="text-heading">Review & Approve Epics</h2>
+          <p className="text-muted text-sm mt-1">
             Review generated epics and approve the ones you want to include
           </p>
         </div>
         <div className="stat-card text-right">
           <div className="stat-label">Approved</div>
           <div className="text-lg font-bold text-accent-cyan">
-            {approvedCount} <span className="text-xs text-white/30 font-normal">epics</span>
-            {' '}{totalStories} <span className="text-xs text-white/30 font-normal">stories</span>
+            {approvedCount} <span className="text-xs text-subtle font-normal">epics</span>
+            {' '}{totalStories} <span className="text-xs text-subtle font-normal">stories</span>
           </div>
         </div>
       </div>
@@ -215,7 +215,7 @@ function EpicCard({
       {/* Epic Header */}
       <div
         onClick={onToggle}
-        className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
+        className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-[var(--bg-card-hover)] transition-colors"
       >
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <span className="badge bg-accent-cyan/15 text-accent-cyan shrink-0">{epic.epic_id}</span>
@@ -228,10 +228,10 @@ function EpicCard({
               <Check className="w-3 h-3 mr-0.5" /> Approved
             </motion.span>
           )}
-          <span className="font-medium text-white truncate">{clean(epic.epic_title)}</span>
+          <span className="font-medium text-heading truncate">{clean(epic.epic_title)}</span>
         </div>
         <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronDown className="w-4 h-4 text-white/30" />
+          <ChevronDown className="w-4 h-4 text-subtle" />
         </motion.div>
       </div>
 
@@ -245,15 +245,15 @@ function EpicCard({
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="overflow-hidden"
           >
-            <div className="px-5 pb-5 border-t border-white/[0.04] space-y-4 pt-4">
-              <p className="text-sm text-white/50">{clean(epic.epic_description)}</p>
+            <div className="px-5 pb-5 space-y-4 pt-4" style={{ borderTop: '1px solid var(--border-card)' }}>
+              <p className="text-sm text-muted">{clean(epic.epic_description)}</p>
 
               {/* User Stories */}
               {epic.user_stories?.map((story, sIndex) => (
                 <div
                   key={story.story_id}
                   className={`ml-3 pl-4 border-l-2 space-y-3 transition-colors duration-300
-                    ${story.approved ? 'border-success/40' : 'border-white/[0.06]'}`}
+                    ${story.approved ? 'border-success/40' : 'border-default'}`}
                 >
                   {/* Story header */}
                   <div>
@@ -268,25 +268,25 @@ function EpicCard({
                         </motion.span>
                       )}
                     </div>
-                    <div className="text-sm font-medium text-white/85">{clean(story.story_title)}</div>
-                    <div className="text-sm text-white/45 mt-1">{clean(story.story_description)}</div>
+                    <div className="text-sm font-medium text-heading">{clean(story.story_title)}</div>
+                    <div className="text-sm text-muted mt-1">{clean(story.story_description)}</div>
                   </div>
 
                   {/* Acceptance Criteria */}
                   {story.acceptance_criteria && (
                     <div className={`p-3.5 rounded-xl text-sm relative transition-all duration-300
-                      ${story.ac_approved ? 'bg-success/[0.05] border border-success/10' : 'bg-white/[0.02] border border-white/[0.04]'}
+                      ${story.ac_approved ? 'bg-success/[0.05] border border-success/10' : 'bg-card-theme border border-default'}
                       ${regenerating[`ac-${story.story_id}`] ? 'opacity-50 pointer-events-none' : ''}`}
                     >
                       {regenerating[`ac-${story.story_id}`] && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-[#050505]/70 rounded-xl z-10">
+                        <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10" style={{ background: 'var(--bg-overlay)' }}>
                           <span className="text-sm font-medium text-accent-cyan flex items-center gap-2">
                             <Loader2 className="w-4 h-4 animate-spin" /> Regenerating...
                           </span>
                         </div>
                       )}
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-mono uppercase tracking-wider text-white/30">Acceptance Criteria</span>
+                        <span className="text-xs font-mono uppercase tracking-wider text-subtle">Acceptance Criteria</span>
                         <div className="flex gap-2">
                           {!regenOpen[`ac-${story.story_id}`] && (
                             <button onClick={() => openRegenInput(`ac-${story.story_id}`)} className="btn-subtle text-xs py-1 px-3">
@@ -300,7 +300,7 @@ function EpicCard({
                           )}
                         </div>
                       </div>
-                      <div className="text-white/55 whitespace-pre-wrap text-[13px] leading-relaxed">
+                      <div className="text-muted whitespace-pre-wrap text-[13px] leading-relaxed">
                         {clean(story.acceptance_criteria)}
                       </div>
                       <AnimatePresence>
@@ -324,18 +324,18 @@ function EpicCard({
                     <div
                       key={tc.test_case_id}
                       className={`p-3.5 rounded-xl text-sm relative transition-all duration-300
-                        ${tc.approved ? 'bg-success/[0.05] border border-success/10' : 'bg-white/[0.02] border border-white/[0.04]'}
+                        ${tc.approved ? 'bg-success/[0.05] border border-success/10' : 'bg-card-theme border border-default'}
                         ${regenerating[`tc-${tc.test_case_id}`] ? 'opacity-50 pointer-events-none' : ''}`}
                     >
                       {regenerating[`tc-${tc.test_case_id}`] && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-[#050505]/70 rounded-xl z-10">
+                        <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10" style={{ background: 'var(--bg-overlay)' }}>
                           <span className="text-sm font-medium text-accent-cyan flex items-center gap-2">
                             <Loader2 className="w-4 h-4 animate-spin" /> Regenerating...
                           </span>
                         </div>
                       )}
                       <div className="flex items-center justify-between mb-2">
-                        <span className="badge bg-white/[0.06] text-white/50">{tc.test_case_id}</span>
+                        <span className="badge bg-card-theme text-muted">{tc.test_case_id}</span>
                         <div className="flex gap-2">
                           {!regenOpen[`tc-${tc.test_case_id}`] && (
                             <button onClick={() => openRegenInput(`tc-${tc.test_case_id}`)} className="btn-subtle text-xs py-1 px-3">
@@ -349,28 +349,28 @@ function EpicCard({
                           )}
                         </div>
                       </div>
-                      <div className="text-white/55 text-[13px]">{clean(tc.test_case_description)}</div>
+                      <div className="text-muted text-[13px]">{clean(tc.test_case_description)}</div>
 
                       {/* Input section */}
                       {(tc.input_preconditions || tc.input_test_data || tc.input_user_action) && (
-                        <div className="mt-2.5 p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] space-y-1.5">
-                          <div className="text-[11px] font-mono uppercase tracking-wider text-white/25 mb-1.5">Input</div>
+                        <div className="mt-2.5 p-3 rounded-lg bg-card-theme border border-default space-y-1.5">
+                          <div className="text-[11px] font-mono uppercase tracking-wider text-faint mb-1.5">Input</div>
                           {tc.input_preconditions && (
                             <div className="text-[13px]">
-                              <span className="text-accent-cyan/60 font-medium">Preconditions: </span>
-                              <span className="text-white/45">{clean(tc.input_preconditions)}</span>
+                              <span className="text-accent-cyan font-medium">Preconditions: </span>
+                              <span className="text-muted">{clean(tc.input_preconditions)}</span>
                             </div>
                           )}
                           {tc.input_test_data && (
                             <div className="text-[13px]">
-                              <span className="text-accent-cyan/60 font-medium">Test Data: </span>
-                              <span className="text-white/45">{clean(tc.input_test_data)}</span>
+                              <span className="text-accent-cyan font-medium">Test Data: </span>
+                              <span className="text-muted">{clean(tc.input_test_data)}</span>
                             </div>
                           )}
                           {tc.input_user_action && (
                             <div className="text-[13px]">
-                              <span className="text-accent-cyan/60 font-medium">User Action: </span>
-                              <span className="text-white/45">{clean(tc.input_user_action)}</span>
+                              <span className="text-accent-cyan font-medium">User Action: </span>
+                              <span className="text-muted">{clean(tc.input_user_action)}</span>
                             </div>
                           )}
                         </div>
@@ -378,8 +378,8 @@ function EpicCard({
 
                       {tc.expected_results?.length > 0 && (
                         <div className="mt-2.5">
-                          <div className="text-[11px] font-mono uppercase tracking-wider text-white/25 mb-1.5">Expected Result</div>
-                          <ul className="ml-4 space-y-1 text-white/45 text-[13px] list-disc">
+                          <div className="text-[11px] font-mono uppercase tracking-wider text-faint mb-1.5">Expected Result</div>
+                          <ul className="ml-4 space-y-1 text-muted text-[13px] list-disc">
                             {tc.expected_results.map((result, i) => (
                               <li key={i}>{clean(result)}</li>
                             ))}
@@ -438,14 +438,15 @@ function EpicCard({
               ))}
 
               {/* Epic Actions */}
-              <div className="flex gap-2 pt-3 border-t border-white/[0.04] flex-wrap">
+              <div className="flex gap-2 pt-3 flex-wrap" style={{ borderTop: '1px solid var(--border-card)' }}>
                 <motion.button
-                  onClick={() => approveEpic(eIndex)}
+                  onClick={() => { if (!epic.approved) { approveEpic(eIndex); onToggle(); } }}
                   disabled={epic.approved}
                   className={`text-sm py-2.5 px-5 rounded-lg font-medium transition-all duration-200
                     ${epic.approved
                       ? 'bg-success/10 text-success/60 cursor-default'
-                      : 'bg-success text-black hover:shadow-[0_0_20px_rgba(52,211,153,0.3)] cursor-pointer'}`}
+                      : 'bg-success hover:shadow-[0_0_20px_rgba(52,211,153,0.3)] cursor-pointer'}`}
+                  style={!epic.approved ? { color: '#fff' } : undefined}
                   whileTap={!epic.approved ? { scale: 0.95 } : {}}
                 >
                   {epic.approved ? <><Check className="w-4 h-4 inline mr-1" />Epic Approved</> : 'Approve Epic'}

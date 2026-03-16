@@ -120,7 +120,7 @@ async function fetchRepoCommits(owner, repo, author, maxCommits = 100) {
     const response = await fetch(url, { headers });
 
     if (!response.ok) {
-      if (response.status === 404) break; // Repo not found or no more commits
+      if (response.status === 404) break;
       throw new Error(`Failed to fetch commits: ${response.statusText}`);
     }
 
@@ -130,7 +130,22 @@ async function fetchRepoCommits(owner, repo, author, maxCommits = 100) {
     commits.push(...pageCommits);
     page++;
 
-    if (pageCommits.length < 100) break; // Last page
+    if (pageCommits.length < 100) break;
+  }
+
+  // Fallback: if no commits found with author filter and owner matches, try without filter
+  if (commits.length === 0 && owner === author) {
+    page = 1;
+    while (commits.length < maxCommits) {
+      const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/commits?per_page=100&page=${page}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) break;
+      const pageCommits = await response.json();
+      if (pageCommits.length === 0) break;
+      commits.push(...pageCommits);
+      page++;
+      if (pageCommits.length < 100) break;
+    }
   }
 
   return commits.slice(0, maxCommits);

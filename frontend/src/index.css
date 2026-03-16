@@ -14,18 +14,18 @@
     --bg-body: #FAF9F6;
     --bg-surface: #F2F0EB;
     --bg-surface-raised: #EDEAE4;
-    --bg-card: rgba(0, 0, 0, 0.02);
-    --bg-card-hover: rgba(0, 0, 0, 0.04);
-    --bg-overlay: rgba(250, 249, 246, 0.8);
+    --bg-card: rgba(0, 0, 0, 0.035);
+    --bg-card-hover: rgba(0, 0, 0, 0.06);
+    --bg-overlay: rgba(250, 249, 246, 0.85);
 
-    --border-card: rgba(0, 0, 0, 0.07);
-    --border-subtle: rgba(0, 0, 0, 0.05);
-    --border-hover: rgba(0, 0, 0, 0.12);
+    --border-card: rgba(0, 0, 0, 0.10);
+    --border-subtle: rgba(0, 0, 0, 0.06);
+    --border-hover: rgba(0, 0, 0, 0.16);
 
     --text-primary: #1C1917;
-    --text-secondary: rgba(28, 25, 23, 0.65);
-    --text-tertiary: rgba(28, 25, 23, 0.4);
-    --text-quaternary: rgba(28, 25, 23, 0.25);
+    --text-secondary: rgba(28, 25, 23, 0.6);
+    --text-tertiary: rgba(28, 25, 23, 0.45);
+    --text-quaternary: rgba(28, 25, 23, 0.3);
     --text-on-accent: #FFFFFF;
 
     --skeleton-from: rgba(0, 0, 0, 0.03);
@@ -491,11 +491,17 @@
 }
 
 @layer utilities {
+  .text-heading { color: var(--text-primary); }
+  .text-body { color: var(--text-primary); }
   .text-muted { color: var(--text-secondary); }
   .text-subtle { color: var(--text-tertiary); }
+  .text-faint { color: var(--text-quaternary); }
   .border-subtle { border-color: var(--border-subtle); }
+  .border-default { border-color: var(--border-card); }
   .bg-surface { background: var(--bg-surface); }
   .bg-surface-raised { background: var(--bg-surface-raised); }
+  .bg-card-theme { background: var(--bg-card); }
+  .ring-default { --tw-ring-color: var(--border-card); }
 }
 
 /* Reduced motion */
@@ -508,36 +514,45 @@
 }
 
 /* ─── Light mode overrides for hardcoded dark-theme Tailwind patterns ─── */
-html:not(.dark) {
-  .text-white { color: var(--text-primary) !important; }
+/* FLAT selectors — no CSS nesting (PostCSS does not have nesting plugin) */
 
-  [class*="text-white/8"],
-  [class*="text-white/7"],
-  [class*="text-white/6"] { color: var(--text-primary) !important; }
+/* Text color overrides: white → dark (skip elements with inline style overrides) */
+html:not(.dark) .text-white:not([style*="color"]) { color: var(--text-primary) !important; }
 
-  [class*="text-white/5"],
-  [class*="text-white/4"] { color: var(--text-secondary) !important; }
+html:not(.dark) [class*="text-white\/8"],
+html:not(.dark) [class*="text-white\/7"],
+html:not(.dark) [class*="text-white\/6"] { color: var(--text-primary) !important; }
 
-  [class*="text-white/3"],
-  [class*="text-white/2"] { color: var(--text-tertiary) !important; }
+html:not(.dark) [class*="text-white\/5"],
+html:not(.dark) [class*="text-white\/4"] { color: var(--text-secondary) !important; }
 
-  [class*="text-white/1"] { color: var(--text-quaternary) !important; }
+html:not(.dark) [class*="text-white\/3"],
+html:not(.dark) [class*="text-white\/2"] { color: var(--text-tertiary) !important; }
 
-  [class*="bg-white/"] { background-color: var(--bg-card) !important; }
-  [class*="border-white/"] { border-color: var(--border-card) !important; }
-  [class*="ring-white/"] { --tw-ring-color: var(--border-card); }
-  [class*="bg-[#050505]"] { background-color: var(--bg-overlay) !important; }
+html:not(.dark) [class*="text-white\/1"] { color: var(--text-quaternary) !important; }
 
-  /* Accent text colors — use CSS variables for proper contrast */
-  .text-accent-cyan { color: var(--accent-cyan) !important; }
-  [class*="text-accent-cyan/"] { color: var(--accent-cyan) !important; }
-  [class*="text-accent-lime"] { color: var(--accent-lime) !important; }
-  .text-warning { color: #B45309 !important; }
-  .text-purple { color: #7C3AED !important; }
-  .text-blue { color: #2563EB !important; }
-  .text-indigo { color: #4F46E5 !important; }
+/* Background overrides */
+html:not(.dark) [class*="bg-white\/"] { background-color: var(--bg-card) !important; }
+html:not(.dark) [class*="border-white\/"] { border-color: var(--border-card) !important; }
+html:not(.dark) [class*="ring-white\/"] { --tw-ring-color: var(--border-card) !important; }
+html:not(.dark) [class*="bg-\[\#050505\]"] { background-color: var(--bg-overlay) !important; }
+html:not(.dark) [class*="bg-\[\#111\]"] { background-color: var(--bg-surface) !important; }
 
-  .recharts-text { fill: var(--text-tertiary) !important; }
-  .recharts-cartesian-grid line { stroke: var(--border-subtle) !important; }
-  select option { background: var(--bg-body); color: var(--text-primary); }
-}
+/* Hover state overrides */
+html:not(.dark) [class*="hover\:text-white\/"]:hover { color: var(--text-primary) !important; }
+html:not(.dark) [class*="hover\:bg-white\/"]:hover { background-color: var(--bg-card-hover) !important; }
+html:not(.dark) [class*="hover\:border-white\/"]:hover { border-color: var(--border-hover) !important; }
+
+/* Accent text colors — use CSS variables for proper light-mode contrast */
+html:not(.dark) .text-accent-cyan { color: var(--accent-cyan) !important; }
+html:not(.dark) [class*="text-accent-cyan\/"] { color: var(--accent-cyan) !important; }
+html:not(.dark) [class*="text-accent-lime"] { color: var(--accent-lime) !important; }
+html:not(.dark) .text-warning { color: #B45309 !important; }
+html:not(.dark) .text-purple { color: #7C3AED !important; }
+html:not(.dark) .text-blue { color: #2563EB !important; }
+html:not(.dark) .text-indigo { color: #4F46E5 !important; }
+
+/* Chart overrides */
+html:not(.dark) .recharts-text { fill: var(--text-tertiary) !important; }
+html:not(.dark) .recharts-cartesian-grid line { stroke: var(--border-subtle) !important; }
+html:not(.dark) select option { background: var(--bg-body); color: var(--text-primary); }

@@ -56,9 +56,10 @@ export default function ProgressStepper() {
                       text-sm font-mono font-semibold
                       transition-colors duration-300
                       ${isCompleted ? 'bg-accent-cyan/15 text-accent-cyan cursor-pointer group-hover:bg-accent-cyan/25' : ''}
-                      ${isCurrent ? 'bg-accent-cyan text-black cursor-pointer' : ''}
-                      ${isUpcoming ? 'bg-white/[0.04] text-white/20 cursor-not-allowed' : ''}
+                      ${isCurrent ? 'bg-accent-cyan cursor-pointer' : ''}
+                      ${isUpcoming ? 'bg-card-theme text-faint cursor-not-allowed' : ''}
                     `}
+                    style={isCurrent ? { color: '#fff' } : undefined}
                     whileHover={!isUpcoming ? { scale: 1.08 } : {}}
                     whileTap={!isUpcoming ? { scale: 0.95 } : {}}
                   >
@@ -80,15 +81,15 @@ export default function ProgressStepper() {
                     text-[11px] font-mono uppercase tracking-widest transition-colors duration-300
                     ${isCurrent ? 'text-accent-cyan' : ''}
                     ${isCompleted ? 'text-accent-cyan/50' : ''}
-                    ${isUpcoming ? 'text-white/15' : ''}
+                    ${isUpcoming ? 'text-faint' : ''}
                   `}>
                     {step.label}
                   </div>
                   <div className={`
                     text-xs mt-0.5 transition-colors duration-300
-                    ${isCurrent ? 'text-white/80' : ''}
-                    ${isCompleted ? 'text-white/35' : ''}
-                    ${isUpcoming ? 'text-white/10' : ''}
+                    ${isCurrent ? 'text-heading' : ''}
+                    ${isCompleted ? 'text-subtle' : ''}
+                    ${isUpcoming ? 'text-faint' : ''}
                   `}>
                     {step.title}
                   </div>
@@ -96,7 +97,7 @@ export default function ProgressStepper() {
               </div>
               {index < steps.length - 1 && (
                 <div className="flex-1 mx-1 -mt-6 relative">
-                  <div className="h-px w-full bg-white/[0.06]" />
+                  <div className="h-px w-full" style={{ background: 'var(--border-card)' }} />
                   {isCompleted && (
                     <motion.div
                       className="absolute top-0 left-0 h-px bg-gradient-to-r from-accent-cyan/40 to-accent-cyan/10"

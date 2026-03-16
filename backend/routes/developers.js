@@ -4,39 +4,60 @@ import { analyzeDeveloper } from '../services/githubService.js';
 const router = express.Router();
 
 // POST /api/analyze-developers - Analyze multiple developers
+// Accepts either:
+//   { developers: [{ username, owner?, repo? }] }
+//   { github_usernames: ["user1", "user2"] }
 router.post('/analyze-developers', async (req, res) => {
   try {
-    const { developers } = req.body;
+    let devList = req.body.developers;
 
-    if (!developers || !Array.isArray(developers)) {
+    // Support simple string array from frontend
+    if (!devList && Array.isArray(req.body.github_usernames)) {
+      devList = req.body.github_usernames.map((u) => ({ username: u }));
+    }
+
+    if (!devList || !Array.isArray(devList)) {
       return res.status(400).json({
         success: false,
-        error: 'Developers array is required'
+        error: 'developers array or github_usernames array is required'
       });
     }
 
-    const results = [];
+    // Analyze all developers in parallel for speed
+    const results = await Promise.all(
+      devList
+        .filter((dev) => {
+          const username = typeof dev === 'string' ? dev : dev.username;
+          return username && username.trim();
+        })
+        .map(async (dev) => {
+          const username = typeof dev === 'string' ? dev : dev.username;
+          try {
+            return await analyzeDeveloper(
+              username,
+              dev.owner || username,
+              dev.repo
+            );
+          } catch (error) {
+            console.error(`Error analyzing ${username}:`, error);
+            return { username, error: error.message };
+          }
+        })
+    );
 
-    for (const dev of developers) {
-      try {
-        const analysis = await analyzeDeveloper(
-          dev.username,
-          dev.owner || dev.username,
-          dev.repo
-        );
-        results.push(analysis);
-      } catch (error) {
-        console.error(`Error analyzing ${dev.username}:`, error);
-        results.push({
-          username: dev.username,
-          error: error.message
-        });
-      }
-    }
+    // Flatten nested analysis fields so frontend can use dev.login, dev.primary_expertise, etc.
+    const devs = results.filter(r => !r.error).map(r => ({
+      ...r,
+      login: r.username,
+      avatar_url: r.avatar || `https://github.com/${r.username}.png`,
+      primary_expertise: r.analysis?.expertise?.primary || 'Full Stack',
+      experience_level: r.analysis?.experienceLevel?.level || 'Junior',
+      top_skills: (r.analysis?.expertise?.technologies || []).slice(0, 6),
+    }));
 
     res.json({
       success: true,
-      developers: results.filter(r => !r.error)
+      developers: devs
     });
   } catch (error) {
     console.error('Error analyzing developers:', error);

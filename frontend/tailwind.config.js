@@ -1,3 +1,5 @@
+import colors from 'tailwindcss/colors'
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -8,36 +10,29 @@ export default {
   theme: {
     extend: {
       colors: {
-        base: '#050505',
-        surface: {
-          DEFAULT: '#0c0c0c',
-          raised: '#141414',
-          overlay: '#1a1a1a',
-        },
-        card: {
-          bg: 'rgba(255, 255, 255, 0.03)',
-          border: 'rgba(255, 255, 255, 0.06)',
-          hover: 'rgba(255, 255, 255, 0.06)',
-        },
+        // Theme-adaptive colors via CSS variables
         accent: {
-          cyan: '#70E6ED',
-          lime: '#CAF291',
-          pink: '#FFB3DB',
+          cyan: 'var(--accent-cyan)',
+          lime: 'var(--accent-lime)',
+          pink: 'var(--accent-pink)',
+          purple: 'var(--accent-purple)',
         },
-        muted: 'rgba(255, 255, 255, 0.5)',
-        subtle: 'rgba(255, 255, 255, 0.06)',
-        success: { DEFAULT: '#34D399', muted: 'rgba(52, 211, 153, 0.15)' },
-        warning: { DEFAULT: '#FBBF24', muted: 'rgba(251, 191, 36, 0.15)' },
-        danger: { DEFAULT: '#F87171', muted: 'rgba(248, 113, 113, 0.15)' },
-        info: { DEFAULT: '#70E6ED', muted: 'rgba(112, 230, 237, 0.15)' },
-        purple: '#A78BFA',
-        blue: '#60A5FA',
-        green: '#34D399',
-        orange: '#FB923C',
-        cyan: '#70E6ED',
-        amber: '#FBBF24',
-        red: '#F87171',
-        indigo: '#818CF8',
+        success: { DEFAULT: '#059669', muted: 'rgba(5, 150, 105, 0.12)' },
+        warning: { DEFAULT: '#B45309', muted: 'rgba(180, 83, 9, 0.12)' },
+        danger: { DEFAULT: '#DC2626', muted: 'rgba(220, 38, 38, 0.12)' },
+        info: { DEFAULT: 'var(--accent-cyan)', muted: 'rgba(14, 165, 176, 0.12)' },
+
+        // Full Tailwind color scales
+        blue: { ...colors.blue, DEFAULT: '#2563EB' },
+        green: { ...colors.green, DEFAULT: '#059669' },
+        red: { ...colors.red, DEFAULT: '#DC2626' },
+        yellow: colors.yellow,
+        purple: { ...colors.purple, DEFAULT: '#7C3AED' },
+        orange: { ...colors.orange, DEFAULT: '#EA580C' },
+        amber: { ...colors.amber, DEFAULT: '#D97706' },
+        indigo: { ...colors.indigo, DEFAULT: '#4F46E5' },
+        gray: colors.gray,
+        cyan: { ...colors.cyan, DEFAULT: 'var(--accent-cyan)' },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
