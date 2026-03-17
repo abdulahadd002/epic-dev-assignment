@@ -215,10 +215,14 @@ export async function createSprint(boardId, name, startDate, endDate) {
   return res.json();
 }
 
-export async function startSprint(sprintId) {
+export async function startSprint(sprintId, startDate, endDate) {
+  // Jira requires startDate + endDate when activating a sprint
+  const body = { state: 'active' };
+  if (startDate) body.startDate = startDate;
+  if (endDate) body.endDate = endDate;
   const res = await jiraFetch(`/rest/agile/1.0/sprint/${sprintId}`, {
     method: 'PUT',
-    body: JSON.stringify({ state: 'active' }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

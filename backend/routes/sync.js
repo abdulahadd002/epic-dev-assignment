@@ -285,7 +285,10 @@ router.post('/ai/sync-jira', async (req, res) => {
     // Step 7: Start the first sprint so it appears on the board
     if (sprints.length > 0) {
       try {
-        await startSprint(sprints[0].id);
+        // Compute first sprint's date range for activation
+        const s1Start = new Date(startDate.getTime());
+        const s1End = new Date(startDate.getTime() + sprintMs);
+        await startSprint(sprints[0].id, s1Start.toISOString(), s1End.toISOString());
         console.log(`[Sync] Started sprint: ${sprints[0].name} (ID: ${sprints[0].id})`);
       } catch (err) {
         console.warn(`[Sync] Could not start sprint: ${err.message}`);
