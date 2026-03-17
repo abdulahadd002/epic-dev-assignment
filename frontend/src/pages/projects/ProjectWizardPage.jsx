@@ -422,7 +422,7 @@ function WizardContent() {
                           <input
                             type="text"
                             value={projectName}
-                            onChange={(e) => { setProjectName(e.target.value); setSyncError(''); setSyncStatus('idle'); }}
+                            onChange={(e) => { setProjectName(e.target.value); setSyncStatus('idle'); }}
                             placeholder="Enter a new project name..."
                             className="w-full rounded-xl border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-4 py-2.5 text-sm
                                        focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
