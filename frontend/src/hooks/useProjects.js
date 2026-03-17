@@ -31,11 +31,16 @@ export function useProjects() {
     saveProjects(updated);
   }, []);
 
+  // All mutating functions read from projectsRef or loadProjects()
+  // to avoid stale closure bugs (useProjects is not a singleton store)
+
   const addProject = useCallback(
     (project) => {
-      persist([project, ...projects]);
+      const current = loadProjects();
+      const updated = [project, ...current.filter(p => p.id !== project.id)];
+      persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const getProject = useCallback(
@@ -45,25 +50,25 @@ export function useProjects() {
 
   const updateProject = useCallback(
     (id, updates) => {
-      const updated = projects.map((p) => (p.id === id ? { ...p, ...updates } : p));
+      const updated = projectsRef.current.map((p) => (p.id === id ? { ...p, ...updates } : p));
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const setEpics = useCallback(
     (projectId, epics) => {
-      const updated = projects.map((p) =>
+      const updated = projectsRef.current.map((p) =>
         p.id === projectId ? { ...p, epics, status: 'epics-ready' } : p
       );
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const addStoriesToEpic = useCallback(
     (projectId, epicId, stories) => {
-      const updated = projects.map((p) => {
+      const updated = projectsRef.current.map((p) => {
         if (p.id !== projectId) return p;
         const updatedEpics = p.epics.map((e) => (e.id === epicId ? { ...e, stories } : e));
         const allHaveStories = updatedEpics.every((e) => e.stories.length > 0);
@@ -71,23 +76,23 @@ export function useProjects() {
       });
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const updateEpicStatus = useCallback(
     (projectId, epicId, status) => {
-      const updated = projects.map((p) => {
+      const updated = projectsRef.current.map((p) => {
         if (p.id !== projectId) return p;
         return { ...p, epics: p.epics.map((e) => (e.id === epicId ? { ...e, status } : e)) };
       });
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const updateStoryStatus = useCallback(
     (projectId, epicId, storyId, status) => {
-      const updated = projects.map((p) => {
+      const updated = projectsRef.current.map((p) => {
         if (p.id !== projectId) return p;
         return {
           ...p,
@@ -100,23 +105,23 @@ export function useProjects() {
       });
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const updateEpic = useCallback(
     (projectId, epicId, updates) => {
-      const updated = projects.map((p) => {
+      const updated = projectsRef.current.map((p) => {
         if (p.id !== projectId) return p;
         return { ...p, epics: p.epics.map((e) => (e.id === epicId ? { ...e, ...updates } : e)) };
       });
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const updateStory = useCallback(
     (projectId, epicId, storyId, updates) => {
-      const updated = projects.map((p) => {
+      const updated = projectsRef.current.map((p) => {
         if (p.id !== projectId) return p;
         return {
           ...p,
@@ -129,12 +134,12 @@ export function useProjects() {
       });
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const bulkUpdateStatus = useCallback(
     (projectId, status) => {
-      const updated = projects.map((p) => {
+      const updated = projectsRef.current.map((p) => {
         if (p.id !== projectId) return p;
         return {
           ...p,
@@ -147,25 +152,25 @@ export function useProjects() {
       });
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const setAssignments = useCallback(
     (projectId, assignments, analyzedDevelopers) => {
-      const updated = projects.map((p) =>
+      const updated = projectsRef.current.map((p) =>
         p.id === projectId ? { ...p, assignments, analyzedDevelopers, status: 'assigned' } : p
       );
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   const deleteProject = useCallback(
     (projectId) => {
-      const updated = projects.filter((p) => p.id !== projectId);
+      const updated = projectsRef.current.filter((p) => p.id !== projectId);
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   // Sync Jira issue stats back into localStorage so ProjectsPage cards reflect live progress
