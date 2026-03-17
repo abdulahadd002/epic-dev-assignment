@@ -5,8 +5,11 @@ const STORAGE_KEY = 'focus-flow-projects';
 function loadProjects() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
+    const parsed = stored ? JSON.parse(stored) : [];
+    console.log('[useProjects] loadProjects:', parsed.length, 'projects from localStorage');
+    return parsed;
+  } catch (e) {
+    console.error('[useProjects] loadProjects error:', e);
     return [];
   }
 }
@@ -16,15 +19,10 @@ function saveProjects(projects) {
 }
 
 export function useProjects() {
-  const [projects, setProjects] = useState([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [projects, setProjects] = useState(() => loadProjects());
+  const [isLoaded] = useState(true);
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
-
-  useEffect(() => {
-    setProjects(loadProjects());
-    setIsLoaded(true);
-  }, []);
 
   const persist = useCallback((updated) => {
     setProjects(updated);
@@ -37,8 +35,10 @@ export function useProjects() {
   const addProject = useCallback(
     (project) => {
       const current = loadProjects();
+      console.log('[useProjects] addProject called. Current projects in localStorage:', current.length, 'Adding:', project.id, project.name);
       const updated = [project, ...current.filter(p => p.id !== project.id)];
       persist(updated);
+      console.log('[useProjects] Saved. Total projects now:', updated.length);
     },
     [persist]
   );
