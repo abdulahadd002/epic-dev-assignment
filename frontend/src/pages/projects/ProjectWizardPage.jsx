@@ -4,7 +4,7 @@ import { WorkflowProvider, useWorkflow } from '../../context/WorkflowContext';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useProjects } from '../../hooks/useProjects';
 import { useDevelopers } from '../../hooks/useDevelopers';
-import { Clock, Calendar, Upload, Loader2, CheckCircle2, AlertCircle, Pencil } from 'lucide-react';
+import { Clock, Calendar, Upload, Loader2, CheckCircle2, AlertCircle, Pencil, Zap, Hash } from 'lucide-react';
 
 import ProgressStepper from '../../components/shared/ProgressStepper';
 import Step1_EpicGeneration from '../../components/steps/Step1_EpicGeneration';
@@ -40,6 +40,24 @@ function transformEpicsForProject(generatedEpics) {
     }));
 }
 
+function suggestSprintCount(deadline, totalStories, totalPoints) {
+  if (!deadline || !deadline.value) return 1;
+  const v = parseInt(deadline.value) || 2;
+  let totalDays;
+  switch (deadline.unit) {
+    case 'hours': totalDays = Math.max(1, Math.ceil(v / 24)); break;
+    case 'days': totalDays = v; break;
+    case 'months': totalDays = v * 30; break;
+    case 'weeks':
+    default: totalDays = v * 7; break;
+  }
+  const byDuration = Math.max(1, Math.round(totalDays / 14));
+  const byStories = Math.max(1, Math.ceil(totalStories / 10));
+  const byPoints = Math.max(1, Math.ceil(totalPoints / 35));
+  const suggestions = [byDuration, byStories, byPoints].sort((a, b) => a - b);
+  return Math.min(suggestions[1], 10);
+}
+
 function transformAssignmentsForProject(assignments) {
   return (assignments || []).map((a) => ({
     epic_id: a.epic?.epic_id,
@@ -63,6 +81,52 @@ function WizardContent() {
   const [syncProgress, setSyncProgress] = useState('');
   const [syncError, setSyncError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [sprintCount, setSprintCount] = useState('');
+
+  // Compute total stories and points from approved epics
+  const { totalStories, totalPoints } = (() => {
+    let stories = 0, points = 0;
+    for (const epic of generatedEpics.filter(e => e.approved)) {
+      for (const s of (epic.user_stories || []).filter(s => s.approved)) {
+        stories++;
+        points += parseInt(s.story_points) || 5;
+      }
+    }
+    return { totalStories: stories, totalPoints: points };
+  })();
+
+  const deadline = deadlineValue ? { value: deadlineValue, unit: deadlineUnit } : null;
+
+  // Compute sprint date ranges for preview
+  const sprintPreviews = (() => {
+    const count = parseInt(sprintCount) || 0;
+    if (!count || !deadlineValue) return [];
+    const v = parseInt(deadlineValue);
+    let totalDays;
+    switch (deadlineUnit) {
+      case 'hours': totalDays = Math.max(1, Math.ceil(v / 24)); break;
+      case 'days': totalDays = v; break;
+      case 'months': totalDays = v * 30; break;
+      case 'weeks':
+      default: totalDays = v * 7; break;
+    }
+    const daysPerSprint = Math.max(1, Math.floor(totalDays / count));
+    const previews = [];
+    const start = new Date();
+    for (let i = 0; i < count; i++) {
+      const s = new Date(start);
+      s.setDate(s.getDate() + i * daysPerSprint);
+      const e = new Date(start);
+      e.setDate(e.getDate() + (i + 1) * daysPerSprint - (i < count - 1 ? 1 : 0));
+      previews.push({
+        name: `Sprint ${i + 1}`,
+        start: s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        end: e.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        days: Math.round((e - s) / 86400000) + 1,
+      });
+    }
+    return previews;
+  })();
 
   const steps = {
     1: <Step1_EpicGeneration />,
@@ -119,6 +183,7 @@ function WizardContent() {
           epics: epics.map((e) => ({ ...e, status: 'approved' })),
           assignments: flatAssignments,
           deadline: deadlineValue ? { value: deadlineValue, unit: deadlineUnit } : null,
+          sprintCount: parseInt(sprintCount) || 1,
           projectName: name,
           developerJiraMap: developers.reduce((map, d) => {
             const jira = d.jiraUsername || rosterDevs.find((r) => r.username === d.username)?.jiraUsername;
@@ -242,13 +307,13 @@ function WizardContent() {
               transition={{ delay: 0.3 }}
               className="mt-10 max-w-3xl mx-auto space-y-6"
             >
-              {/* Sprint Deadline */}
+              {/* Project Deadline */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
                   <Clock className="h-4 w-4 text-teal-500" />
-                  Sprint Deadline
+                  Project Deadline
                 </h3>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <input
                     type="number"
                     min="1"
@@ -278,6 +343,55 @@ function WizardContent() {
                   )}
                 </div>
               </div>
+
+              {/* Sprint Configuration */}
+              {deadlineValue && (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                  <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
+                    <Hash className="h-4 w-4 text-teal-500" />
+                    Sprint Configuration
+                  </h3>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-gray-600">Number of Sprints</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={sprintCount}
+                        onChange={(e) => setSprintCount(e.target.value)}
+                        placeholder="e.g. 3"
+                        className="w-20 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-3 py-2.5 text-sm
+                                   focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setSprintCount(String(suggestSprintCount(deadline, totalStories, totalPoints)))}
+                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-teal-600 bg-teal-50 border border-teal-200 rounded-lg
+                                 hover:bg-teal-100 transition-all"
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                      Suggest optimal
+                    </button>
+                    <span className="text-xs text-gray-400">
+                      {totalStories} stories · {totalPoints} pts
+                    </span>
+                  </div>
+
+                  {/* Sprint preview cards */}
+                  {sprintPreviews.length > 0 && (
+                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                      {sprintPreviews.map((sp, i) => (
+                        <div key={i} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
+                          <div className="font-semibold text-gray-900">{sp.name}</div>
+                          <div className="text-gray-500">{sp.start} – {sp.end}</div>
+                          <div className="text-gray-400">{sp.days} days</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Sync to Jira */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
