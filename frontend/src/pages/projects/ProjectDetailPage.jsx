@@ -1,5 +1,5 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useProjects } from '../../hooks/useProjects';
 import { useSprintIssues, useBurndownData, useSprintDetails } from '../../hooks/useSprintData';
 import { useAlerts } from '../../hooks/useAlerts';
@@ -917,7 +917,32 @@ function SyncedProjectView({ project }) {
   );
 }
 
+class DetailErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-8 text-red-600">
+          <h2 className="text-lg font-bold mb-2">Something went wrong</h2>
+          <pre className="text-sm whitespace-pre-wrap">{this.state.error.message}</pre>
+          <pre className="text-xs text-gray-500 mt-2 whitespace-pre-wrap">{this.state.error.stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function ProjectDetailPage() {
+  return (
+    <DetailErrorBoundary>
+      <ProjectDetailPageInner />
+    </DetailErrorBoundary>
+  );
+}
+
+function ProjectDetailPageInner() {
   const { projectId } = useParams();
   const { getProject, isLoaded } = useProjects();
   const navigate = useNavigate();

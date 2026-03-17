@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const STORAGE_KEY = 'focus-flow-projects';
 
@@ -18,6 +18,8 @@ function saveProjects(projects) {
 export function useProjects() {
   const [projects, setProjects] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
 
   useEffect(() => {
     setProjects(loadProjects());
@@ -167,6 +169,7 @@ export function useProjects() {
   );
 
   // Sync Jira issue stats back into localStorage so ProjectsPage cards reflect live progress
+  // Uses ref to avoid depending on `projects` state (which would cause infinite re-render loops)
   const syncJiraProgress = useCallback(
     (projectId, jiraIssues) => {
       if (!jiraIssues || jiraIssues.length === 0) return;
@@ -179,7 +182,7 @@ export function useProjects() {
         else if (s.includes('progress') || s.includes('review')) inProgress++;
         else todo++;
       });
-      const updated = projects.map(p => {
+      const updated = projectsRef.current.map(p => {
         if (p.id !== projectId) return p;
         return {
           ...p,
@@ -196,7 +199,7 @@ export function useProjects() {
       });
       persist(updated);
     },
-    [projects, persist]
+    [persist]
   );
 
   return {
