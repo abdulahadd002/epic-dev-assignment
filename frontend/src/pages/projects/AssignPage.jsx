@@ -1,7 +1,8 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useEffect, useState, useMemo } from 'react';
 import { useProjects } from '../../hooks/useProjects';
-import { ArrowLeft, Plus, Minus, Loader2, UserCheck, RefreshCw, Clock, Calendar, Zap, ChevronDown, ChevronRight } from 'lucide-react';
+import { useDevelopers } from '../../hooks/useDevelopers';
+import { ArrowLeft, Plus, Minus, Loader2, UserCheck, RefreshCw, Clock, Calendar, Zap, ChevronDown, ChevronRight, Users, Check, X } from 'lucide-react';
 import SyncButton from '../../components/projects/SyncButton';
 
 function suggestSprintCount(deadline, totalStories, totalPoints) {
@@ -15,35 +16,32 @@ function suggestSprintCount(deadline, totalStories, totalPoints) {
     case 'weeks':
     default: totalDays = v * 7; break;
   }
-
-  // Standard sprint length: 2 weeks = 14 days
   const byDuration = Math.max(1, Math.round(totalDays / 14));
-  // By complexity: ~8-12 stories per sprint is ideal
   const byStories = Math.max(1, Math.ceil(totalStories / 10));
-  // By points: ~30-40 points per sprint is typical
   const byPoints = Math.max(1, Math.ceil(totalPoints / 35));
-
-  // Take the median of the three suggestions
   const suggestions = [byDuration, byStories, byPoints].sort((a, b) => a - b);
-  return Math.min(suggestions[1], 10); // Cap at 10 sprints
+  return Math.min(suggestions[1], 10);
 }
 
 export default function AssignPage() {
   const { projectId } = useParams();
   const { getProject, isLoaded, setAssignments, updateEpic, updateStory, updateProject } = useProjects();
+  const { developers: rosterDevs, isLoaded: rosterLoaded, addDevelopers: addToRoster } = useDevelopers();
   const navigate = useNavigate();
   const project = getProject(projectId);
 
   const [githubUsernames, setGithubUsernames] = useState(['']);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
-  const [developers, setDevelopers] = useState(project?.analyzedDevelopers || []);
+  // Selected developers for this project (from roster + newly analyzed)
+  const [selectedDevs, setSelectedDevs] = useState(project?.analyzedDevelopers || []);
   const [assignments, setLocalAssignments] = useState(project?.assignments || []);
   const [error, setError] = useState('');
   const [deadlineValue, setDeadlineValue] = useState(project?.deadline?.value || '');
   const [deadlineUnit, setDeadlineUnit] = useState(project?.deadline?.unit || 'weeks');
   const [sprintCount, setSprintCount] = useState(project?.sprintCount || 1);
   const [expandedEpics, setExpandedEpics] = useState({});
+  const [showAddNew, setShowAddNew] = useState(false);
 
   useEffect(() => {
     if (isLoaded && !project) navigate('/projects');
@@ -53,7 +51,9 @@ export default function AssignPage() {
   const totalStories = useMemo(() => approvedEpics.reduce((s, e) => s + (e.stories?.filter(st => st.status === 'approved').length || 0), 0), [approvedEpics]);
   const totalPoints = useMemo(() => approvedEpics.reduce((s, e) => s + (e.stories?.filter(st => st.status === 'approved').reduce((ss, st) => ss + (st.storyPoints || 5), 0) || 0), 0), [approvedEpics]);
 
-  // Auto-suggest sprint count when deadline changes
+  // Track which roster devs are selected by username
+  const selectedUsernames = useMemo(() => new Set(selectedDevs.map(d => d.username || d.login)), [selectedDevs]);
+
   useEffect(() => {
     if (deadlineValue) {
       const suggested = suggestSprintCount({ value: deadlineValue, unit: deadlineUnit }, totalStories, totalPoints);
@@ -72,8 +72,16 @@ export default function AssignPage() {
   const addUsername = () => setGithubUsernames((prev) => [...prev, '']);
   const removeUsername = (i) => setGithubUsernames((prev) => prev.filter((_, idx) => idx !== i));
   const setUsername = (i, val) => setGithubUsernames((prev) => prev.map((u, idx) => idx === i ? val : u));
-
   const toggleEpic = (epicId) => setExpandedEpics(prev => ({ ...prev, [epicId]: !prev[epicId] }));
+
+  const toggleRosterDev = (dev) => {
+    const username = dev.username || dev.login;
+    if (selectedUsernames.has(username)) {
+      setSelectedDevs(prev => prev.filter(d => (d.username || d.login) !== username));
+    } else {
+      setSelectedDevs(prev => [...prev, dev]);
+    }
+  };
 
   const handleAnalyze = async () => {
     const usernames = githubUsernames.map((u) => u.trim()).filter(Boolean);
@@ -88,7 +96,22 @@ export default function AssignPage() {
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Analysis failed'); }
       const data = await res.json();
-      setDevelopers(data.developers || data);
+      const newDevs = data.developers || data;
+      // Add to persistent roster
+      addToRoster(newDevs);
+      // Add to selected devs (merge, don't duplicate)
+      setSelectedDevs(prev => {
+        const merged = [...prev];
+        for (const dev of newDevs) {
+          const uname = dev.username || dev.login;
+          if (!merged.find(d => (d.username || d.login) === uname)) {
+            merged.push(dev);
+          }
+        }
+        return merged;
+      });
+      setGithubUsernames(['']);
+      setShowAddNew(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -97,7 +120,7 @@ export default function AssignPage() {
   };
 
   const handleAutoAssign = async () => {
-    if (developers.length === 0 || approvedEpics.length === 0) return;
+    if (selectedDevs.length === 0 || approvedEpics.length === 0) return;
     setIsAssigning(true);
     setError('');
     try {
@@ -115,12 +138,11 @@ export default function AssignPage() {
       const res = await fetch('/api/auto-assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ epics: epicPayload, developers }),
+        body: JSON.stringify({ epics: epicPayload, developers: selectedDevs }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Assignment failed'); }
       const data = await res.json();
       const raw = data.assignments || data;
-      // Story-level assignments: { epic, story, developer, score, confidence }
       const newAssignments = raw.map((a) => ({
         epic_id: a.epic?.epic_id,
         epic_title: a.epic?.epic_title,
@@ -133,8 +155,7 @@ export default function AssignPage() {
         alternatives: a.alternatives,
       }));
       setLocalAssignments(newAssignments);
-      setAssignments(projectId, newAssignments, developers);
-      // Auto-expand all epics to show story assignments
+      setAssignments(projectId, newAssignments, selectedDevs);
       const expanded = {};
       approvedEpics.forEach(e => { expanded[e.id] = true; });
       setExpandedEpics(expanded);
@@ -151,11 +172,7 @@ export default function AssignPage() {
       const res = await fetch('/api/reassign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          story_id: storyId,
-          new_developer: newDeveloperLogin,
-          developers,
-        }),
+        body: JSON.stringify({ story_id: storyId, new_developer: newDeveloperLogin, developers: selectedDevs }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Reassign failed'); }
       const data = await res.json();
@@ -187,7 +204,6 @@ export default function AssignPage() {
     });
   };
 
-  // Compute preview end date from deadline
   const deadlineEndDate = (() => {
     if (!deadlineValue || deadlineValue <= 0) return null;
     const d = new Date();
@@ -202,7 +218,6 @@ export default function AssignPage() {
     return d.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
   })();
 
-  // Group assignments by epic for display
   const assignmentsByEpic = useMemo(() => {
     const grouped = {};
     for (const a of assignments) {
@@ -212,6 +227,9 @@ export default function AssignPage() {
     }
     return Object.values(grouped);
   }, [assignments]);
+
+  // Roster devs not yet selected
+  const availableRosterDevs = rosterLoaded ? rosterDevs : [];
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -227,75 +245,167 @@ export default function AssignPage() {
 
       {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      {/* GitHub Usernames */}
+      {/* Developer Selection */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6">
-        <h2 className="mb-4 text-base font-semibold text-gray-900">GitHub Usernames</h2>
-        <div className="space-y-2">
-          {githubUsernames.map((username, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(i, e.target.value)}
-                placeholder={`GitHub username ${i + 1}`}
-                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              {githubUsernames.length > 1 && (
-                <button onClick={() => removeUsername(i)} className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600">
-                  <Minus className="h-4 w-4" />
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <Users className="h-4 w-4 text-blue-600" />
+            Select Developers
+          </h2>
+          {selectedDevs.length > 0 && (
+            <span className="text-xs text-gray-500">{selectedDevs.length} selected</span>
+          )}
+        </div>
+
+        {/* Existing roster */}
+        {availableRosterDevs.length > 0 && (
+          <div className="mb-4">
+            <p className="text-xs text-gray-500 mb-2">Select from your team roster:</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {availableRosterDevs.map((dev) => {
+                const uname = dev.username || dev.login;
+                const isSelected = selectedUsernames.has(uname);
+                return (
+                  <button
+                    key={uname}
+                    onClick={() => toggleRosterDev(dev)}
+                    className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-all ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="relative flex-shrink-0">
+                      {dev.avatar_url || dev.avatar ? (
+                        <img
+                          src={dev.avatar_url || dev.avatar}
+                          alt={uname}
+                          className="h-9 w-9 rounded-full"
+                        />
+                      ) : (
+                        <div className="h-9 w-9 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500">
+                          {uname[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      {isSelected && (
+                        <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-blue-500 flex items-center justify-center">
+                          <Check className="h-2.5 w-2.5 text-white" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">{uname}</p>
+                      <p className="text-[10px] text-gray-500 truncate">{dev.primary_expertise || 'Full Stack'} · {dev.experience_level || 'Unknown'}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Divider */}
+        {availableRosterDevs.length > 0 && (
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-3 text-xs text-gray-400">or analyze new developers</span>
+            </div>
+          </div>
+        )}
+
+        {/* Add new developers */}
+        {(availableRosterDevs.length === 0 || showAddNew) ? (
+          <div>
+            <div className="space-y-2">
+              {githubUsernames.map((username, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(i, e.target.value)}
+                    placeholder={`GitHub username ${i + 1}`}
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAnalyze(); }}
+                  />
+                  {githubUsernames.length > 1 && (
+                    <button onClick={() => removeUsername(i)} className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600">
+                      <Minus className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              {githubUsernames.length < 10 && (
+                <button onClick={addUsername} className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800">
+                  <Plus className="h-4 w-4" />
+                  Add Username
                 </button>
               )}
+              <button
+                onClick={handleAnalyze}
+                disabled={isAnalyzing}
+                className="ml-auto inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-300"
+              >
+                {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
+                {isAnalyzing ? 'Analyzing...' : 'Analyze & Add'}
+              </button>
             </div>
-          ))}
-        </div>
-        <div className="mt-3 flex items-center gap-3">
-          {githubUsernames.length < 10 && (
-            <button onClick={addUsername} className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800">
-              <Plus className="h-4 w-4" />
-              Add Username
-            </button>
-          )}
+          </div>
+        ) : (
           <button
-            onClick={handleAnalyze}
-            disabled={isAnalyzing}
-            className="ml-auto inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-300"
+            onClick={() => setShowAddNew(true)}
+            className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
           >
-            {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
-            {isAnalyzing ? 'Analyzing...' : 'Analyze Developers'}
+            <Plus className="h-4 w-4" />
+            Analyze new GitHub developer
           </button>
-        </div>
+        )}
       </div>
 
-      {/* Developer Cards */}
-      {developers.length > 0 && (
+      {/* Selected Developer Cards */}
+      {selectedDevs.length > 0 && (
         <div className="mb-6">
-          <h2 className="mb-3 text-base font-semibold text-gray-900">Developer Profiles</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {developers.map((dev) => (
-              <div key={dev.login || dev.username} className="rounded-xl border border-gray-200 bg-white p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  {dev.avatar_url && (
-                    <img src={dev.avatar_url} alt={dev.login} className="h-10 w-10 rounded-full" />
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-gray-900">Selected Developers ({selectedDevs.length})</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {selectedDevs.map((dev) => {
+              const uname = dev.login || dev.username;
+              return (
+                <div key={uname} className="rounded-xl border border-gray-200 bg-white p-4 relative group">
+                  <button
+                    onClick={() => toggleRosterDev(dev)}
+                    className="absolute top-2 right-2 rounded-full p-1 text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <div className="flex items-center gap-3 mb-3">
+                    {(dev.avatar_url || dev.avatar) && (
+                      <img src={dev.avatar_url || dev.avatar} alt={uname} className="h-10 w-10 rounded-full" />
+                    )}
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm">{uname}</p>
+                      <p className="text-xs text-gray-500">{dev.primary_expertise || dev.expertise}</p>
+                    </div>
+                  </div>
+                  {dev.experience_level && (
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                      {dev.experience_level}
+                    </span>
                   )}
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">{dev.login || dev.username}</p>
-                    <p className="text-xs text-gray-500">{dev.primary_expertise || dev.expertise}</p>
-                  </div>
+                  {dev.top_skills && dev.top_skills.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {dev.top_skills.slice(0, 4).map((skill) => (
+                        <span key={skill} className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">{skill}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {dev.experience_level && (
-                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                    {dev.experience_level}
-                  </span>
-                )}
-                {dev.top_skills && dev.top_skills.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {dev.top_skills.slice(0, 4).map((skill) => (
-                      <span key={skill} className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">{skill}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <button
@@ -319,7 +429,6 @@ export default function AssignPage() {
           <div className="divide-y divide-gray-100">
             {assignmentsByEpic.map((group) => (
               <div key={group.epic_id}>
-                {/* Epic header — collapsible */}
                 <button
                   onClick={() => toggleEpic(group.epic_id)}
                   className="w-full flex items-center gap-2 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
@@ -328,43 +437,41 @@ export default function AssignPage() {
                   <span className="font-medium text-gray-800 text-sm">{group.epic_title}</span>
                   <span className="ml-auto text-xs text-gray-500">{group.stories.length} stories</span>
                 </button>
-                {/* Story rows */}
                 {expandedEpics[group.epic_id] && (
                   <div className="divide-y divide-gray-50">
-                    {group.stories.map((a) => (
-                      <div key={a.story_id} className="flex items-center gap-3 px-6 py-2.5 text-sm">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 truncate">{a.story_title}</p>
-                          <span className="text-[10px] text-gray-400">{a.story_points} SP</span>
+                    {group.stories.map((a) => {
+                      const assignedDev = selectedDevs.find(d => (d.login || d.username) === a.assigned_developer);
+                      return (
+                        <div key={a.story_id} className="flex items-center gap-3 px-6 py-2.5 text-sm">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-gray-800 truncate">{a.story_title}</p>
+                            <span className="text-[10px] text-gray-400">{a.story_points} SP</span>
+                          </div>
+                          <div className="flex items-center gap-2 min-w-[120px]">
+                            {(assignedDev?.avatar_url || assignedDev?.avatar) && (
+                              <img src={assignedDev?.avatar_url || assignedDev?.avatar} className="h-5 w-5 rounded-full" alt="" />
+                            )}
+                            <span className="text-gray-700 text-xs font-medium">{a.assigned_developer}</span>
+                          </div>
+                          <span className="text-xs text-gray-500 w-12 text-right">{a.score != null ? `${a.score}%` : '-'}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium w-16 text-center ${
+                            a.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                            a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>{a.confidence}</span>
+                          <select
+                            onChange={(e) => handleReassign(a.story_id, e.target.value)}
+                            className="rounded border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-500 focus:outline-none w-28"
+                            defaultValue=""
+                          >
+                            <option value="" disabled>Reassign...</option>
+                            {selectedDevs.map((d) => (
+                              <option key={d.login || d.username} value={d.login || d.username}>{d.login || d.username}</option>
+                            ))}
+                          </select>
                         </div>
-                        <div className="flex items-center gap-2 min-w-[120px]">
-                          {developers.find(d => (d.login || d.username) === a.assigned_developer)?.avatar_url && (
-                            <img
-                              src={developers.find(d => (d.login || d.username) === a.assigned_developer)?.avatar_url}
-                              className="h-5 w-5 rounded-full"
-                              alt=""
-                            />
-                          )}
-                          <span className="text-gray-700 text-xs font-medium">{a.assigned_developer}</span>
-                        </div>
-                        <span className="text-xs text-gray-500 w-12 text-right">{a.score != null ? `${a.score}%` : '-'}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium w-16 text-center ${
-                          a.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                          a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>{a.confidence}</span>
-                        <select
-                          onChange={(e) => handleReassign(a.story_id, e.target.value)}
-                          className="rounded border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-500 focus:outline-none w-28"
-                          defaultValue=""
-                        >
-                          <option value="" disabled>Reassign...</option>
-                          {developers.map((d) => (
-                            <option key={d.login || d.username} value={d.login || d.username}>{d.login || d.username}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -380,7 +487,6 @@ export default function AssignPage() {
           Sprint Configuration
         </h2>
 
-        {/* Deadline */}
         <p className="mb-3 text-sm text-gray-500">Set the total project duration. Stories will be distributed across sprints.</p>
         <div className="flex items-center gap-3 mb-5">
           <label className="text-sm text-gray-600 w-20">Duration:</label>
@@ -411,7 +517,6 @@ export default function AssignPage() {
           )}
         </div>
 
-        {/* Sprint count */}
         <div className="flex items-center gap-3">
           <label className="text-sm text-gray-600 w-20">Sprints:</label>
           <input
