@@ -1,6 +1,6 @@
 import express from 'express';
 import {
-  createEpic, createStory, createSprint, moveIssueToSprint,
+  createEpic, createStory, createSprint, startSprint, moveIssueToSprint,
   assignIssue, updateStoryPoints, searchUser,
   generateProjectKey, getMyself, createProject, getProjectBoards,
   getProjectRoles, addUserToProjectRole,
@@ -279,6 +279,16 @@ router.post('/ai/sync-jira', async (req, res) => {
             console.warn(`[Sync] Could not move stories to sprint ${i + 1}: ${err.message}`);
           }
         }
+      }
+    }
+
+    // Step 7: Start the first sprint so it appears on the board
+    if (sprints.length > 0) {
+      try {
+        await startSprint(sprints[0].id);
+        console.log(`[Sync] Started sprint: ${sprints[0].name} (ID: ${sprints[0].id})`);
+      } catch (err) {
+        console.warn(`[Sync] Could not start sprint: ${err.message}`);
       }
     }
 

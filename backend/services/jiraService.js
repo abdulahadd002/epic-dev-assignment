@@ -193,6 +193,18 @@ export async function createSprint(boardId, name, startDate, endDate) {
   return res.json();
 }
 
+export async function startSprint(sprintId) {
+  const res = await jiraFetch(`/rest/agile/1.0/sprint/${sprintId}`, {
+    method: 'POST',
+    body: JSON.stringify({ state: 'active' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.errorMessages?.[0] || `Sprint start failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function moveIssueToSprint(sprintId, issueKeys) {
   const res = await jiraFetch(`/rest/agile/1.0/sprint/${sprintId}/issue`, {
     method: 'POST',
