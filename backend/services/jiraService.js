@@ -268,3 +268,34 @@ export async function getProjectBoards(projectKey) {
   const data = await res.json();
   return (data.values || []).map((b) => ({ id: b.id, name: b.name, type: b.type }));
 }
+
+/**
+ * Get all roles for a project. Returns { roleName: roleId } map.
+ */
+export async function getProjectRoles(projectKey) {
+  const res = await jiraFetch(`/rest/api/3/project/${encodeURIComponent(projectKey)}/role`);
+  if (!res.ok) throw new Error(`Failed to get project roles: ${res.status}`);
+  const data = await res.json();
+  // data is { "RoleName": "https://.../{roleId}", ... }
+  const roles = {};
+  for (const [name, url] of Object.entries(data)) {
+    const match = url.match(/\/(\d+)$/);
+    if (match) roles[name] = match[1];
+  }
+  return roles;
+}
+
+/**
+ * Add a user (by accountId) to a project role.
+ */
+export async function addUserToProjectRole(projectKey, roleId, accountId) {
+  const res = await jiraFetch(`/rest/api/3/project/${encodeURIComponent(projectKey)}/role/${roleId}`, {
+    method: 'POST',
+    body: JSON.stringify({ user: [accountId] }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.errorMessages?.[0] || `Failed to add user to project role: ${res.status}`);
+  }
+  return res.json();
+}

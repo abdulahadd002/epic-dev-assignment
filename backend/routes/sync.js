@@ -3,6 +3,7 @@ import {
   createEpic, createStory, createSprint, moveIssueToSprint,
   assignIssue, updateStoryPoints, searchUser,
   generateProjectKey, getMyself, createProject, getProjectBoards,
+  getProjectRoles, addUserToProjectRole,
 } from '../services/jiraService.js';
 
 const router = express.Router();
@@ -158,6 +159,31 @@ router.post('/ai/sync-jira', async (req, res) => {
         }
       } catch (err) {
         console.warn(`[Sync] Could not find Jira user for "${jiraQuery}": ${err.message}`);
+      }
+    }
+
+    // Step 4b: Add developers to the Jira project team (Member role)
+    const resolvedAccountIds = Object.values(accountIdCache).filter(Boolean);
+    if (resolvedAccountIds.length > 0) {
+      try {
+        const roles = await getProjectRoles(projectKey);
+        // Prefer "Member" role, fall back to "Developers", then any non-admin role
+        const roleId = roles['Member'] || roles['Developers'] || roles['Developer']
+          || Object.entries(roles).find(([name]) => !name.toLowerCase().includes('admin'))?.[1];
+        if (roleId) {
+          for (const accountId of resolvedAccountIds) {
+            try {
+              await addUserToProjectRole(projectKey, roleId, accountId);
+            } catch (err) {
+              console.warn(`[Sync] Could not add user to project role: ${err.message}`);
+            }
+          }
+          console.log(`[Sync] Added ${resolvedAccountIds.length} developers to project team`);
+        } else {
+          console.warn('[Sync] No suitable project role found for team members');
+        }
+      } catch (err) {
+        console.warn(`[Sync] Could not set up project team: ${err.message}`);
       }
     }
 
