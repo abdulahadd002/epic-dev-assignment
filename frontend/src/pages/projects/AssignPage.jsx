@@ -1,8 +1,32 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useProjects } from '../../hooks/useProjects';
-import { ArrowLeft, Plus, Minus, Loader2, UserCheck, RefreshCw, Clock, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, Minus, Loader2, UserCheck, RefreshCw, Clock, Calendar, Zap, ChevronDown, ChevronRight } from 'lucide-react';
 import SyncButton from '../../components/projects/SyncButton';
+
+function suggestSprintCount(deadline, totalStories, totalPoints) {
+  if (!deadline || !deadline.value) return 1;
+  const v = parseInt(deadline.value) || 2;
+  let totalDays;
+  switch (deadline.unit) {
+    case 'hours': totalDays = Math.max(1, Math.ceil(v / 24)); break;
+    case 'days': totalDays = v; break;
+    case 'months': totalDays = v * 30; break;
+    case 'weeks':
+    default: totalDays = v * 7; break;
+  }
+
+  // Standard sprint length: 2 weeks = 14 days
+  const byDuration = Math.max(1, Math.round(totalDays / 14));
+  // By complexity: ~8-12 stories per sprint is ideal
+  const byStories = Math.max(1, Math.ceil(totalStories / 10));
+  // By points: ~30-40 points per sprint is typical
+  const byPoints = Math.max(1, Math.ceil(totalPoints / 35));
+
+  // Take the median of the three suggestions
+  const suggestions = [byDuration, byStories, byPoints].sort((a, b) => a - b);
+  return Math.min(suggestions[1], 10); // Cap at 10 sprints
+}
 
 export default function AssignPage() {
   const { projectId } = useParams();
@@ -18,10 +42,24 @@ export default function AssignPage() {
   const [error, setError] = useState('');
   const [deadlineValue, setDeadlineValue] = useState(project?.deadline?.value || '');
   const [deadlineUnit, setDeadlineUnit] = useState(project?.deadline?.unit || 'weeks');
+  const [sprintCount, setSprintCount] = useState(project?.sprintCount || 1);
+  const [expandedEpics, setExpandedEpics] = useState({});
 
   useEffect(() => {
     if (isLoaded && !project) navigate('/projects');
   }, [isLoaded, project, navigate]);
+
+  const approvedEpics = useMemo(() => project?.epics?.filter((e) => e.status === 'approved') || [], [project]);
+  const totalStories = useMemo(() => approvedEpics.reduce((s, e) => s + (e.stories?.filter(st => st.status === 'approved').length || 0), 0), [approvedEpics]);
+  const totalPoints = useMemo(() => approvedEpics.reduce((s, e) => s + (e.stories?.filter(st => st.status === 'approved').reduce((ss, st) => ss + (st.storyPoints || 5), 0) || 0), 0), [approvedEpics]);
+
+  // Auto-suggest sprint count when deadline changes
+  useEffect(() => {
+    if (deadlineValue) {
+      const suggested = suggestSprintCount({ value: deadlineValue, unit: deadlineUnit }, totalStories, totalPoints);
+      setSprintCount(suggested);
+    }
+  }, [deadlineValue, deadlineUnit, totalStories, totalPoints]);
 
   if (!isLoaded || !project) {
     return (
@@ -31,11 +69,11 @@ export default function AssignPage() {
     );
   }
 
-  const approvedEpics = project.epics.filter((e) => e.status === 'approved');
-
   const addUsername = () => setGithubUsernames((prev) => [...prev, '']);
   const removeUsername = (i) => setGithubUsernames((prev) => prev.filter((_, idx) => idx !== i));
   const setUsername = (i, val) => setGithubUsernames((prev) => prev.map((u, idx) => idx === i ? val : u));
+
+  const toggleEpic = (epicId) => setExpandedEpics(prev => ({ ...prev, [epicId]: !prev[epicId] }));
 
   const handleAnalyze = async () => {
     const usernames = githubUsernames.map((u) => u.trim()).filter(Boolean);
@@ -50,8 +88,7 @@ export default function AssignPage() {
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Analysis failed'); }
       const data = await res.json();
-      const devs = data.developers || data;
-      setDevelopers(devs);
+      setDevelopers(data.developers || data);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -64,7 +101,6 @@ export default function AssignPage() {
     setIsAssigning(true);
     setError('');
     try {
-      // Transform to epic-dev-assignment format
       const epicPayload = approvedEpics.map((e) => ({
         epic_id: e.id,
         epic_title: e.title,
@@ -83,19 +119,25 @@ export default function AssignPage() {
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Assignment failed'); }
       const data = await res.json();
-      // Backend returns nested: { assignments: [{ epic: {epic_id, ...}, developer: {username, ...}, score, confidence }] }
-      // Flatten so UI can render a.epic_id, a.assigned_developer, etc.
       const raw = data.assignments || data;
+      // Story-level assignments: { epic, story, developer, score, confidence }
       const newAssignments = raw.map((a) => ({
-        epic_id: a.epic?.epic_id || a.epic_id,
-        epic_title: a.epic?.epic_title || a.epic_title,
-        assigned_developer: a.developer?.username || a.assigned_developer,
+        epic_id: a.epic?.epic_id,
+        epic_title: a.epic?.epic_title,
+        story_id: a.story?.story_id,
+        story_title: a.story?.story_title,
+        story_points: a.story?.story_points || 5,
+        assigned_developer: a.developer?.username,
         score: a.score,
         confidence: a.confidence,
         alternatives: a.alternatives,
       }));
       setLocalAssignments(newAssignments);
       setAssignments(projectId, newAssignments, developers);
+      // Auto-expand all epics to show story assignments
+      const expanded = {};
+      approvedEpics.forEach(e => { expanded[e.id] = true; });
+      setExpandedEpics(expanded);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -103,14 +145,14 @@ export default function AssignPage() {
     }
   };
 
-  const handleReassign = async (epicId, newDeveloperLogin) => {
+  const handleReassign = async (storyId, newDeveloperLogin) => {
     try {
       if (!newDeveloperLogin) return;
       const res = await fetch('/api/reassign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          epic_id: epicId,
+          story_id: storyId,
           new_developer: newDeveloperLogin,
           developers,
         }),
@@ -118,7 +160,7 @@ export default function AssignPage() {
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Reassign failed'); }
       const data = await res.json();
       setLocalAssignments((prev) =>
-        prev.map((a) => (a.epic_id === epicId)
+        prev.map((a) => (a.story_id === storyId)
           ? { ...a, assigned_developer: newDeveloperLogin, confidence: data.confidence || 'manual' }
           : a
         )
@@ -138,6 +180,7 @@ export default function AssignPage() {
     updateProject(projectId, {
       status: 'synced',
       deadline: { value: deadlineValue, unit: deadlineUnit },
+      sprintCount,
       jiraSprintId: sprintId,
       jiraProjectKey,
       jiraBoardId,
@@ -158,6 +201,17 @@ export default function AssignPage() {
     }
     return d.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
   })();
+
+  // Group assignments by epic for display
+  const assignmentsByEpic = useMemo(() => {
+    const grouped = {};
+    for (const a of assignments) {
+      const key = a.epic_id;
+      if (!grouped[key]) grouped[key] = { epic_id: key, epic_title: a.epic_title, stories: [] };
+      grouped[key].stories.push(a);
+    }
+    return Object.values(grouped);
+  }, [assignments]);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -250,69 +304,86 @@ export default function AssignPage() {
             className="mt-4 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:bg-gray-300"
           >
             {isAssigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {isAssigning ? 'Auto-Assigning...' : 'Auto-Assign Epics'}
+            {isAssigning ? 'Auto-Assigning Stories...' : 'Auto-Assign Stories'}
           </button>
         </div>
       )}
 
-      {/* Assignment Table */}
+      {/* Story-Level Assignment Table */}
       {assignments.length > 0 && (
         <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
-          <h2 className="px-6 py-4 text-base font-semibold text-gray-900 border-b border-gray-100">Epic Assignments</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50 text-left">
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Epic</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Developer</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Score</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Confidence</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Reassign</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {assignments.map((a) => (
-                  <tr key={a.epic_id || a.epicId}>
-                    <td className="px-4 py-3 font-medium text-gray-900">{a.epic_title || a.epicTitle}</td>
-                    <td className="px-4 py-3 text-gray-700">{a.assigned_developer || a.developer}</td>
-                    <td className="px-4 py-3 text-gray-500">{a.score != null ? `${Math.round(a.score * 100)}%` : '-'}</td>
-                    <td className="px-4 py-3">
-                      {a.confidence && (
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-gray-900">Story Assignments</h2>
+            <span className="text-xs text-gray-500">{assignments.length} stories across {assignmentsByEpic.length} epics</span>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {assignmentsByEpic.map((group) => (
+              <div key={group.epic_id}>
+                {/* Epic header — collapsible */}
+                <button
+                  onClick={() => toggleEpic(group.epic_id)}
+                  className="w-full flex items-center gap-2 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                >
+                  {expandedEpics[group.epic_id] ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                  <span className="font-medium text-gray-800 text-sm">{group.epic_title}</span>
+                  <span className="ml-auto text-xs text-gray-500">{group.stories.length} stories</span>
+                </button>
+                {/* Story rows */}
+                {expandedEpics[group.epic_id] && (
+                  <div className="divide-y divide-gray-50">
+                    {group.stories.map((a) => (
+                      <div key={a.story_id} className="flex items-center gap-3 px-6 py-2.5 text-sm">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-800 truncate">{a.story_title}</p>
+                          <span className="text-[10px] text-gray-400">{a.story_points} SP</span>
+                        </div>
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          {developers.find(d => (d.login || d.username) === a.assigned_developer)?.avatar_url && (
+                            <img
+                              src={developers.find(d => (d.login || d.username) === a.assigned_developer)?.avatar_url}
+                              className="h-5 w-5 rounded-full"
+                              alt=""
+                            />
+                          )}
+                          <span className="text-gray-700 text-xs font-medium">{a.assigned_developer}</span>
+                        </div>
+                        <span className="text-xs text-gray-500 w-12 text-right">{a.score != null ? `${a.score}%` : '-'}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium w-16 text-center ${
                           a.confidence === 'high' ? 'bg-green-100 text-green-700' :
                           a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
                           'bg-red-100 text-red-700'
                         }`}>{a.confidence}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        onChange={(e) => handleReassign(a.epic_id || a.epicId, e.target.value)}
-                        className="rounded border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
-                        defaultValue=""
-                      >
-                        <option value="" disabled>Reassign...</option>
-                        {developers.map((d) => (
-                          <option key={d.login} value={d.login}>{d.login}</option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        <select
+                          onChange={(e) => handleReassign(a.story_id, e.target.value)}
+                          className="rounded border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-500 focus:outline-none w-28"
+                          defaultValue=""
+                        >
+                          <option value="" disabled>Reassign...</option>
+                          {developers.map((d) => (
+                            <option key={d.login || d.username} value={d.login || d.username}>{d.login || d.username}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Sprint Deadline */}
+      {/* Sprint Configuration */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6">
         <h2 className="mb-4 text-base font-semibold text-gray-900 flex items-center gap-2">
           <Clock className="h-4 w-4 text-blue-600" />
-          Sprint Deadline
+          Sprint Configuration
         </h2>
-        <p className="mb-4 text-sm text-gray-500">Set the duration for this sprint before syncing to Jira.</p>
-        <div className="flex items-center gap-3">
+
+        {/* Deadline */}
+        <p className="mb-3 text-sm text-gray-500">Set the total project duration. Stories will be distributed across sprints.</p>
+        <div className="flex items-center gap-3 mb-5">
+          <label className="text-sm text-gray-600 w-20">Duration:</label>
           <input
             type="number"
             min="1"
@@ -339,6 +410,63 @@ export default function AssignPage() {
             </span>
           )}
         </div>
+
+        {/* Sprint count */}
+        <div className="flex items-center gap-3">
+          <label className="text-sm text-gray-600 w-20">Sprints:</label>
+          <input
+            type="number"
+            min="1"
+            max="10"
+            value={sprintCount}
+            onChange={(e) => setSprintCount(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+            className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          {deadlineValue && (
+            <button
+              onClick={() => {
+                const suggested = suggestSprintCount({ value: deadlineValue, unit: deadlineUnit }, totalStories, totalPoints);
+                setSprintCount(suggested);
+              }}
+              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+            >
+              <Zap className="h-3 w-3" />
+              Suggest optimal
+            </button>
+          )}
+          <span className="text-xs text-gray-400 ml-auto">
+            ~{Math.ceil(totalStories / sprintCount)} stories / sprint
+            {' · '}~{Math.round(totalPoints / sprintCount)} SP / sprint
+          </span>
+        </div>
+
+        {sprintCount > 1 && deadlineValue && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {Array.from({ length: sprintCount }, (_, i) => {
+              const totalMs = (() => {
+                const v = parseInt(deadlineValue) || 2;
+                switch (deadlineUnit) {
+                  case 'hours': return v * 60 * 60 * 1000;
+                  case 'days': return v * 24 * 60 * 60 * 1000;
+                  case 'months': return v * 30 * 24 * 60 * 60 * 1000;
+                  case 'weeks':
+                  default: return v * 7 * 24 * 60 * 60 * 1000;
+                }
+              })();
+              const sprintMs = totalMs / sprintCount;
+              const start = new Date(Date.now() + sprintMs * i);
+              const end = new Date(Date.now() + sprintMs * (i + 1));
+              const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              return (
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <span className="font-medium text-gray-800">Sprint {i + 1}</span>
+                  <span className="text-gray-400">·</span>
+                  <span>{fmt(start)} – {fmt(end)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Jira Sync */}
@@ -349,6 +477,7 @@ export default function AssignPage() {
           assignments={assignments}
           deadline={deadlineValue ? { value: deadlineValue, unit: deadlineUnit } : null}
           projectName={project.name}
+          sprintCount={sprintCount}
           onSyncComplete={handleSyncComplete}
         />
       </div>

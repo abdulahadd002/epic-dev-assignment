@@ -100,12 +100,23 @@ function calculateConfidence(topScore, secondScore, hasExpertiseMatch, epicClass
 }
 
 /**
- * Auto-assign epics to developers using multi-factor scoring algorithm
+ * Auto-assign epics to developers using multi-factor scoring algorithm (legacy)
  * @param {Array} epics - Approved epics with user stories
  * @param {Array} developers - Analyzed developers with expertise and experience
  * @returns {Object} Assignment results with workload distribution
  */
 export async function autoAssignEpics(epics, developers) {
+  return autoAssignStories(epics, developers);
+}
+
+/**
+ * Auto-assign individual stories to developers using multi-factor scoring.
+ * Each story is classified via its parent epic, then scored and assigned independently.
+ * @param {Array} epics - Approved epics with user stories
+ * @param {Array} developers - Analyzed developers with expertise and experience
+ * @returns {Object} Story-level assignment results with workload distribution
+ */
+export async function autoAssignStories(epics, developers) {
   const assignments = [];
   const devWorkloads = {};
 
@@ -114,72 +125,75 @@ export async function autoAssignEpics(epics, developers) {
     devWorkloads[dev.username] = 0;
   });
 
-  // Classify and assign each epic
+  // Classify all epics first
   for (const epic of epics) {
     if (!epic.classification) {
       epic.classification = await classifyEpic(epic);
     }
+  }
 
+  // Assign each story individually
+  for (const epic of epics) {
     const epicType = epic.classification.primary;
+    const stories = epic.user_stories || [];
 
-    const totalStoryPoints = epic.user_stories?.reduce((sum, story) =>
-      sum + parseInt(story.story_points || 5, 10), 0
-    ) || 10;
+    for (const story of stories) {
+      const storyPoints = parseInt(story.story_points || 5, 10);
 
-    // Score each developer for this epic
-    const devScores = developers.map(dev =>
-      scoreDeveloper(dev, epicType, devWorkloads, developers)
-    );
+      // Score each developer for this story (using epic classification as context)
+      const devScores = developers.map(dev =>
+        scoreDeveloper(dev, epicType, devWorkloads, developers)
+      );
 
-    // Sort by score descending, with tie-breaking:
-    // 1. Higher experience level score breaks ties
-    // 2. Alphabetical username as final stable tiebreaker
-    devScores.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (b.breakdown.experienceLevel !== a.breakdown.experienceLevel)
-        return b.breakdown.experienceLevel - a.breakdown.experienceLevel;
-      return a.dev.username.localeCompare(b.dev.username);
-    });
+      // Sort by score descending with tie-breaking
+      devScores.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (b.breakdown.experienceLevel !== a.breakdown.experienceLevel)
+          return b.breakdown.experienceLevel - a.breakdown.experienceLevel;
+        return a.dev.username.localeCompare(b.dev.username);
+      });
 
-    const assigned = devScores[0];
-    const secondBest = devScores[1];
-    const hasExpertiseMatch = assigned.breakdown.expertiseMatch > 0;
+      const assigned = devScores[0];
+      const secondBest = devScores[1];
+      const hasExpertiseMatch = assigned.breakdown.expertiseMatch > 0;
 
-    const confidence = calculateConfidence(
-      assigned.score,
-      secondBest?.score ?? 0,
-      hasExpertiseMatch,
-      epic.classification.confidence
-    );
+      const confidence = calculateConfidence(
+        assigned.score,
+        secondBest?.score ?? 0,
+        hasExpertiseMatch,
+        epic.classification.confidence
+      );
 
-    assignments.push({
-      epic: {
-        epic_id: epic.epic_id,
-        epic_title: epic.epic_title,
-        epic_description: epic.epic_description,
-        classification: epic.classification,
-        totalStoryPoints,
-        userStoriesCount: epic.user_stories?.length || 0,
-        user_stories: epic.user_stories || []
-      },
-      developer: {
-        username: assigned.dev.username,
-        expertise: assigned.dev.analysis.expertise.primary,
-        experienceLevel: assigned.dev.analysis.experienceLevel.level,
-        avatar: assigned.dev.avatar
-      },
-      score: Math.round(assigned.score),
-      confidence,
-      breakdown: assigned.breakdown,
-      alternatives: devScores.slice(1, 3).map(ds => ({
-        username: ds.dev.username,
-        score: Math.round(ds.score),
-        expertise: ds.dev.analysis.expertise.primary
-      }))
-    });
+      assignments.push({
+        epic: {
+          epic_id: epic.epic_id,
+          epic_title: epic.epic_title,
+          classification: epic.classification,
+        },
+        story: {
+          story_id: story.story_id,
+          story_title: story.story_title,
+          story_points: storyPoints,
+        },
+        developer: {
+          username: assigned.dev.username,
+          expertise: assigned.dev.analysis.expertise.primary,
+          experienceLevel: assigned.dev.analysis.experienceLevel.level,
+          avatar: assigned.dev.avatar
+        },
+        score: Math.round(assigned.score),
+        confidence,
+        breakdown: assigned.breakdown,
+        alternatives: devScores.slice(1, 3).map(ds => ({
+          username: ds.dev.username,
+          score: Math.round(ds.score),
+          expertise: ds.dev.analysis.expertise.primary
+        }))
+      });
 
-    // Update workload
-    devWorkloads[assigned.dev.username] += totalStoryPoints;
+      // Update workload per story
+      devWorkloads[assigned.dev.username] += storyPoints;
+    }
   }
 
   return {
@@ -188,6 +202,7 @@ export async function autoAssignEpics(epics, developers) {
     workloadDistribution: devWorkloads,
     summary: {
       totalEpics: epics.length,
+      totalStories: assignments.length,
       totalStoryPoints: Object.values(devWorkloads).reduce((a, b) => a + b, 0),
       avgStoryPointsPerDev: Object.values(devWorkloads).reduce((a, b) => a + b, 0) / developers.length,
       highConfidenceAssignments: assignments.filter(a => a.confidence === "high").length,
@@ -198,34 +213,34 @@ export async function autoAssignEpics(epics, developers) {
 }
 
 /**
- * Manually reassign an epic to a different developer with score recalculation
- * @param {Array} assignments - Current assignments
- * @param {string} epicId - Epic ID to reassign
+ * Manually reassign a story to a different developer with score recalculation
+ * @param {Array} assignments - Current story-level assignments
+ * @param {string} storyId - Story ID to reassign
  * @param {string} newDeveloperUsername - New developer username
  * @param {Object} workloadDistribution - Current workload distribution
  * @param {Array} developers - Full developer list for score recalculation
  * @returns {Object} Updated assignments and workload
  */
-export function reassignEpic(assignments, epicId, newDeveloperUsername, workloadDistribution, developers) {
-  const assignmentIndex = assignments.findIndex(a => a.epic.epic_id === epicId);
+export function reassignStory(assignments, storyId, newDeveloperUsername, workloadDistribution, developers) {
+  const assignmentIndex = assignments.findIndex(a => a.story?.story_id === storyId || a.epic?.epic_id === storyId);
 
   if (assignmentIndex === -1) {
-    throw new Error(`Epic ${epicId} not found in assignments`);
+    throw new Error(`Story ${storyId} not found in assignments`);
   }
 
   const assignment = assignments[assignmentIndex];
   const oldDeveloper = assignment.developer.username;
-  const storyPoints = assignment.epic.totalStoryPoints;
+  const storyPoints = assignment.story?.story_points || 5;
 
   // Update workload
-  workloadDistribution[oldDeveloper] -= storyPoints;
+  workloadDistribution[oldDeveloper] = Math.max(0, (workloadDistribution[oldDeveloper] || 0) - storyPoints);
   workloadDistribution[newDeveloperUsername] = (workloadDistribution[newDeveloperUsername] || 0) + storyPoints;
 
   // Find new developer's full data for proper score recalculation
   const newDev = developers?.find(d => d.username === newDeveloperUsername);
 
   if (newDev) {
-    const epicType = assignment.epic.classification?.primary || "Full Stack";
+    const epicType = assignment.epic?.classification?.primary || "Full Stack";
     const recalc = scoreDeveloper(newDev, epicType, workloadDistribution, developers || []);
 
     assignments[assignmentIndex].developer = {
@@ -238,7 +253,6 @@ export function reassignEpic(assignments, epicId, newDeveloperUsername, workload
     assignments[assignmentIndex].breakdown = recalc.breakdown;
     assignments[assignmentIndex].confidence = recalc.breakdown.expertiseMatch > 0 ? "manual-verified" : "manual";
   } else {
-    // Fallback if developer data not available
     assignments[assignmentIndex].developer.username = newDeveloperUsername;
     assignments[assignmentIndex].confidence = "manual";
   }
@@ -249,3 +263,6 @@ export function reassignEpic(assignments, epicId, newDeveloperUsername, workload
     workloadDistribution
   };
 }
+
+// Keep legacy name for backward compat
+export const reassignEpic = reassignStory;

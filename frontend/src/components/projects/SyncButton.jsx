@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Upload, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
-export default function SyncButton({ epics, assignments, deadline, projectName, onSyncComplete }) {
+export default function SyncButton({ epics, assignments, deadline, projectName, sprintCount, onSyncComplete }) {
   const [status, setStatus] = useState('idle'); // idle | syncing | success | error
   const [error, setError] = useState('');
   const [createdKey, setCreatedKey] = useState(null);
@@ -18,7 +18,13 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
       const res = await fetch('/api/ai/sync-jira', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ epics, assignments, deadline, projectName }),
+        body: JSON.stringify({
+          epics,
+          assignments,
+          deadline,
+          projectName,
+          sprintCount: sprintCount || 1,
+        }),
       });
 
       if (!res.ok) {
@@ -51,7 +57,7 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
     <div className="space-y-3">
       <p className="text-sm text-gray-600">
         {canSync
-          ? `${approvedEpics.length} approved epic${approvedEpics.length !== 1 ? 's' : ''} will be synced. A new Jira project will be created automatically.`
+          ? `${approvedEpics.length} approved epics will be synced across ${sprintCount || 1} sprint${(sprintCount || 1) > 1 ? 's' : ''}. A new Jira project will be created automatically.`
           : 'At least 2 approved epics are required to sync to Jira.'}
       </p>
 
