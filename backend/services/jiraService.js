@@ -43,7 +43,7 @@ export async function getSprintDetails(sprintId) {
 
 export async function getSprintIssues(sprintId) {
   const res = await jiraFetch(
-    `/rest/agile/1.0/sprint/${sprintId}/issue?maxResults=200&fields=summary,status,issuetype,priority,assignee,story_points,customfield_10016,customfield_10028,labels,created,updated`
+    `/rest/agile/1.0/sprint/${sprintId}/issue?maxResults=200&fields=summary,status,issuetype,priority,assignee,story_points,customfield_10016,customfield_10028,labels,created,updated,resolutiondate,statuscategorychangedate`
   );
   if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
   const data = await res.json();
@@ -64,6 +64,8 @@ export async function getSprintIssues(sprintId) {
       labels: f.labels || [],
       created: f.created,
       updated: f.updated,
+      resolutionDate: f.resolutiondate || null,
+      statusCategoryChangeDate: f.statuscategorychangedate || null,
     };
   });
 }
@@ -76,20 +78,40 @@ export async function getBurndownData(sprintId) {
   const start = new Date(sprint.startDate);
   const end = new Date(sprint.endDate);
   const now = new Date();
-  const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+  const totalDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
   const totalPoints = issues.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
+
+  // Determine when each issue was completed
+  // Use resolutionDate first, then statusCategoryChangeDate for "Done" items, then updated as fallback
+  const completionDates = issues
+    .filter(i => i.statusCategory === 'Done')
+    .map(i => ({
+      points: i.storyPoints || 0,
+      completedAt: new Date(i.resolutionDate || i.statusCategoryChangeDate || i.updated),
+    }));
 
   const points = [];
   for (let d = 0; d <= totalDays; d++) {
     const date = new Date(start);
     date.setDate(start.getDate() + d);
     if (date > now) break;
+
+    // Set to end of day for comparison
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
     const dateStr = date.toISOString().split('T')[0];
     const ideal = totalPoints - (totalPoints / totalDays) * d;
-    const completed = issues
-      .filter((i) => i.statusCategory === 'Done' && i.updated && new Date(i.updated) <= date)
-      .reduce((sum, i) => sum + (i.storyPoints || 0), 0);
-    points.push({ date: dateStr, ideal: Math.max(0, Math.round(ideal)), actual: Math.max(0, totalPoints - completed) });
+    const completedPoints = completionDates
+      .filter(c => c.completedAt <= endOfDay)
+      .reduce((sum, c) => sum + c.points, 0);
+
+    points.push({
+      day: `Day ${d + 1}`,
+      date: dateStr,
+      ideal: Math.max(0, Math.round(ideal)),
+      actual: Math.max(0, totalPoints - completedPoints),
+    });
   }
   return points;
 }
