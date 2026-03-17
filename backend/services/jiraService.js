@@ -217,12 +217,12 @@ export async function createSprint(boardId, name, startDate, endDate) {
 
 export async function startSprint(sprintId) {
   const res = await jiraFetch(`/rest/agile/1.0/sprint/${sprintId}`, {
-    method: 'POST',
+    method: 'PUT',
     body: JSON.stringify({ state: 'active' }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.errorMessages?.[0] || `Sprint start failed: ${res.status}`);
+    throw new Error(err.errorMessages?.[0] || err.errors?.state || `Sprint start failed: ${res.status}`);
   }
   return res.json();
 }
