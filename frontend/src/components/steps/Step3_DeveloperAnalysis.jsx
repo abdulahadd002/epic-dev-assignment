@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useDevelopers } from '../../hooks/useDevelopers';
+import { useProjects } from '../../hooks/useProjects';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Users, Loader2, ChevronDown, Check, UserPlus } from 'lucide-react';
 import { SkeletonDevCard } from '../shared/Skeleton';
@@ -45,6 +46,26 @@ const inputCls = "w-full rounded-xl border border-gray-200 bg-gray-50 text-gray-
 export default function Step3_DeveloperAnalysis() {
   const { developers, setDevelopers, nextStep, previousStep } = useWorkflow();
   const { developers: rosterDevs, addDevelopers: addToRoster } = useDevelopers();
+  const { projects } = useProjects();
+
+  // Collect developers from existing projects and merge into roster on mount
+  useEffect(() => {
+    const projectDevs = [];
+    for (const p of projects) {
+      if (p.analyzedDevelopers?.length > 0) {
+        for (const dev of p.analyzedDevelopers) {
+          if (dev.username && !rosterDevs.some(r => r.username === dev.username)) {
+            if (!projectDevs.some(d => d.username === dev.username)) {
+              projectDevs.push(dev);
+            }
+          }
+        }
+      }
+    }
+    if (projectDevs.length > 0) {
+      addToRoster(projectDevs);
+    }
+  }, [projects.length]); // Only run when project count changes
 
   const [selectedRoster, setSelectedRoster] = useState(() => {
     const set = new Set();
@@ -206,67 +227,79 @@ export default function Step3_DeveloperAnalysis() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Roster Selection */}
-      {rosterDevs.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <Users className="w-5 h-5 text-teal-500" />
-              Select from Team Roster
-            </h2>
-            <p className="text-gray-500 text-sm mt-1">
-              These developers are already analyzed. Click to select them for this project.
-            </p>
-          </div>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Users className="w-5 h-5 text-teal-500" />
+            Select from Team Roster
+          </h2>
+          <p className="text-gray-500 text-sm mt-1">
+            {rosterDevs.length > 0
+              ? 'These developers are already analyzed. Click to select them for this project.'
+              : 'No developers in your roster yet. Analyze developers below to build your team.'}
+          </p>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {rosterDevs.map((dev) => {
-              const isSelected = selectedRoster.has(dev.username);
-              return (
-                <motion.button
-                  key={dev.username}
-                  onClick={() => toggleRosterDev(dev.username)}
-                  className={`flex items-center gap-3 rounded-xl p-3 text-left transition-all duration-200 border ${
-                    isSelected
-                      ? 'bg-teal-50 border-teal-300'
-                      : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                  }`}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="relative">
-                    <img
-                      src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
-                      alt={dev.username}
-                      className="w-10 h-10 rounded-lg ring-1 ring-gray-200"
-                    />
-                    {isSelected && (
-                      <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center">
-                        <Check className="w-3 h-3 text-white" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-900 truncate">{dev.username}</span>
-                      {dev.experience_level && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                          {dev.experience_level}
-                        </span>
+        {rosterDevs.length > 0 ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {rosterDevs.map((dev) => {
+                const isSelected = selectedRoster.has(dev.username);
+                return (
+                  <motion.button
+                    key={dev.username}
+                    onClick={() => toggleRosterDev(dev.username)}
+                    className={`flex items-center gap-3 rounded-xl p-3 text-left transition-all duration-200 border ${
+                      isSelected
+                        ? 'bg-teal-50 border-teal-300'
+                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                    }`}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <div className="relative">
+                      <img
+                        src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
+                        alt={dev.username}
+                        className="w-10 h-10 rounded-lg ring-1 ring-gray-200"
+                      />
+                      {isSelected && (
+                        <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
                       )}
                     </div>
-                    <span className="text-xs text-gray-400 truncate block">
-                      {dev.primary_expertise || 'Full Stack'}
-                    </span>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900 truncate">{dev.username}</span>
+                        {dev.experience_level && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                            {dev.experience_level}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400 truncate block">
+                        {dev.primary_expertise || 'Full Stack'}
+                      </span>
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
 
-          <div className="text-xs text-gray-400">
-            {selectedRoster.size} of {rosterDevs.length} selected
+            <div className="text-xs text-gray-400">
+              {selectedRoster.size} of {rosterDevs.length} selected
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-8">
+            <div className="text-center">
+              <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Your team roster is empty</p>
+              <p className="text-xs text-gray-400 mt-1">Analyze a developer below to add them to your roster</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Analyze New Developers */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
