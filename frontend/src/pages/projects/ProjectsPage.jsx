@@ -16,22 +16,35 @@ function getProjectProgress(project) {
   const totalPoints = project.epics?.reduce((s, e) =>
     s + (e.stories?.reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0) || 0;
   const approvedEpics = project.epics?.filter(e => e.status === 'approved').length || 0;
+  const devCount = project.analyzedDevelopers?.length || project.assignments?.length || 0;
+  const assignmentCount = project.assignments?.length || 0;
+
+  // For synced projects with Jira progress data, use live stats
+  const jp = project.jiraProgress;
+  if (project.status === 'synced' && jp && jp.total > 0) {
+    const progressPct = Math.round((jp.done / jp.total) * 100);
+    return {
+      totalEpics, totalStories, totalPoints, approvedEpics,
+      doneStories: jp.done,
+      donePoints: jp.donePoints,
+      inProgress: jp.inProgress,
+      todo: jp.todo,
+      jiraTotal: jp.total,
+      jiraTotalPoints: jp.totalPoints,
+      devCount, assignmentCount, progressPct,
+    };
+  }
+
+  // Non-synced: progress based on pipeline step
   const doneStories = project.epics?.reduce((s, e) =>
     s + (e.stories?.filter(st => st.status === 'done').length || 0), 0) || 0;
   const donePoints = project.epics?.reduce((s, e) =>
     s + (e.stories?.filter(st => st.status === 'done').reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0) || 0;
-  const devCount = project.analyzedDevelopers?.length || project.assignments?.length || 0;
-  const assignmentCount = project.assignments?.length || 0;
 
-  // Progress percentage based on status
   let progressPct = 0;
   const cfg = statusConfig[project.status];
   if (cfg) {
     progressPct = (cfg.step / 4) * 100;
-  }
-  // If synced and has done stories, use actual completion
-  if (project.status === 'synced' && totalStories > 0) {
-    progressPct = Math.round((doneStories / totalStories) * 100);
   }
 
   return { totalEpics, totalStories, totalPoints, approvedEpics, doneStories, donePoints, devCount, assignmentCount, progressPct };

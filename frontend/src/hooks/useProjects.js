@@ -166,6 +166,39 @@ export function useProjects() {
     [projects, persist]
   );
 
+  // Sync Jira issue stats back into localStorage so ProjectsPage cards reflect live progress
+  const syncJiraProgress = useCallback(
+    (projectId, jiraIssues) => {
+      if (!jiraIssues || jiraIssues.length === 0) return;
+      let todo = 0, inProgress = 0, done = 0, donePoints = 0, totalPoints = 0;
+      jiraIssues.forEach(i => {
+        const s = (i.status || '').toLowerCase();
+        const pts = i.storyPoints || 0;
+        totalPoints += pts;
+        if (s.includes('done') || s.includes('closed') || s.includes('resolved')) { done++; donePoints += pts; }
+        else if (s.includes('progress') || s.includes('review')) inProgress++;
+        else todo++;
+      });
+      const updated = projects.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          jiraProgress: {
+            total: jiraIssues.length,
+            todo,
+            inProgress,
+            done,
+            donePoints,
+            totalPoints,
+            lastSynced: Date.now(),
+          },
+        };
+      });
+      persist(updated);
+    },
+    [projects, persist]
+  );
+
   return {
     projects,
     isLoaded,
@@ -181,5 +214,6 @@ export function useProjects() {
     bulkUpdateStatus,
     setAssignments,
     deleteProject,
+    syncJiraProgress,
   };
 }

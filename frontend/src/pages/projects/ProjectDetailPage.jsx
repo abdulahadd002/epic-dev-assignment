@@ -588,6 +588,14 @@ function SyncedProjectView({ project }) {
   const { burndown, isLoading: burndownLoading } = useBurndownData(sprintId);
   const { sprint } = useSprintDetails(sprintId);
   const { alerts } = useAlerts(issues);
+  const { syncJiraProgress } = useProjects();
+
+  // Sync Jira progress into localStorage whenever issues update
+  useEffect(() => {
+    if (issues && issues.length > 0) {
+      syncJiraProgress(project.id, issues);
+    }
+  }, [issues, project.id, syncJiraProgress]);
 
   const totalPoints = project.epics?.reduce((s, e) =>
     s + (e.stories?.reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0) || 0;
