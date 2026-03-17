@@ -77,6 +77,27 @@ export default function Step3_DeveloperAnalysis() {
     return set;
   });
 
+  // Compute existing workload per developer across all projects
+  const devWorkloadMap = useMemo(() => {
+    const map = {};
+    for (const p of projects) {
+      if (!p.assignments || p.assignments.length === 0) continue;
+      for (const a of p.assignments) {
+        const username = a.assigned_developer || a.developer?.username;
+        if (!username) continue;
+        if (!map[username]) map[username] = { stories: 0, points: 0, projects: new Set() };
+        map[username].stories += 1;
+        map[username].points += (a.story_points || a.storyPoints || 0);
+        map[username].projects.add(p.id || p.name);
+      }
+    }
+    const result = {};
+    for (const [username, data] of Object.entries(map)) {
+      result[username] = { stories: data.stories, points: data.points, projectCount: data.projects.size };
+    }
+    return result;
+  }, [projects]);
+
   const [showNewForm, setShowNewForm] = useState(false);
   const [devInputs, setDevInputs] = useState([{ username: '', owner: '', repo: '' }]);
   const [loading, setLoading] = useState(false);
@@ -245,6 +266,7 @@ export default function Step3_DeveloperAnalysis() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {rosterDevs.map((dev) => {
                 const isSelected = selectedRoster.has(dev.username);
+                const workload = devWorkloadMap[dev.username] || { stories: 0, points: 0, projectCount: 0 };
                 return (
                   <motion.button
                     key={dev.username}
@@ -280,6 +302,13 @@ export default function Step3_DeveloperAnalysis() {
                       <span className="text-xs text-gray-400 truncate block">
                         {dev.primary_expertise || 'Full Stack'}
                       </span>
+                      {workload.stories > 0 ? (
+                        <span className="text-[10px] text-amber-600 font-medium mt-0.5 block">
+                          {workload.stories} {workload.stories === 1 ? 'story' : 'stories'} ({workload.points} SP) across {workload.projectCount} {workload.projectCount === 1 ? 'project' : 'projects'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-emerald-500 font-medium mt-0.5 block">No current assignments</span>
+                      )}
                     </div>
                   </motion.button>
                 );
