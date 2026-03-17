@@ -14,18 +14,6 @@ function clean(text) {
     .replace(/^[-*_]{3,}\s*$/gm, '');
 }
 
-function useSpotlight() {
-  const ref = useRef(null);
-  const onMove = useCallback((e) => {
-    const el = ref.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    el.style.setProperty('--spotlight-x', `${e.clientX - rect.left}px`);
-    el.style.setProperty('--spotlight-y', `${e.clientY - rect.top}px`);
-  }, []);
-  return { ref, onMouseMove: onMove };
-}
-
 function RegenInput({ componentId, label, onSubmit, onCancel, isLoading }) {
   const [requirements, setRequirements] = useState('');
 
@@ -34,30 +22,31 @@ function RegenInput({ componentId, label, onSubmit, onCancel, isLoading }) {
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
       exit={{ opacity: 0, height: 0 }}
-      className="mt-3 p-4 rounded-xl bg-info/5 border border-info/20 space-y-3 overflow-hidden"
+      className="mt-3 p-4 rounded-xl bg-teal-50 border border-teal-200 space-y-3 overflow-hidden"
     >
-      <div className="flex items-center gap-2 text-sm font-medium text-accent-cyan">
+      <div className="flex items-center gap-2 text-sm font-medium text-teal-700">
         <span>Regenerate {label}:</span>
-        <span className="badge bg-accent-cyan/15 text-accent-cyan">{componentId}</span>
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-teal-100 text-teal-700">{componentId}</span>
       </div>
       <textarea
         value={requirements}
         onChange={(e) => setRequirements(e.target.value)}
         placeholder={`Describe what you'd like changed for ${componentId}...`}
-        className="input-dark w-full resize-vertical min-h-[60px] text-sm"
+        className="w-full resize-vertical min-h-[60px] text-sm rounded-xl border border-gray-200 bg-white text-gray-900 placeholder-gray-400 px-3 py-2
+                   focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
         disabled={isLoading}
       />
       <div className="flex gap-2">
         <button
           onClick={() => onSubmit(requirements)}
           disabled={isLoading}
-          className="btn-accent text-xs py-2 px-4"
+          className="text-xs py-2 px-4 rounded-lg font-semibold bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-40 transition-all"
         >
           {isLoading ? (
             <span className="flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Regenerating...</span>
           ) : 'Submit'}
         </button>
-        <button onClick={onCancel} disabled={isLoading} className="btn-ghost text-xs py-2 px-4">
+        <button onClick={onCancel} disabled={isLoading} className="text-xs py-2 px-4 rounded-lg font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-all">
           Cancel
         </button>
       </div>
@@ -139,16 +128,16 @@ export default function Step2_EpicApproval() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-heading">Review & Approve Epics</h2>
-          <p className="text-muted text-sm mt-1">
+          <h2 className="text-xl font-bold text-gray-900">Review & Approve Epics</h2>
+          <p className="text-gray-500 text-sm mt-1">
             Review generated epics and approve the ones you want to include
           </p>
         </div>
-        <div className="stat-card text-right">
-          <div className="stat-label">Approved</div>
-          <div className="text-lg font-bold text-accent-cyan">
-            {approvedCount} <span className="text-xs text-subtle font-normal">epics</span>
-            {' '}{totalStories} <span className="text-xs text-subtle font-normal">stories</span>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-right">
+          <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-1">Approved</div>
+          <div className="text-lg font-bold text-teal-600">
+            {approvedCount} <span className="text-xs text-gray-400 font-normal">epics</span>
+            {' '}{totalStories} <span className="text-xs text-gray-400 font-normal">stories</span>
           </div>
         </div>
       </div>
@@ -182,11 +171,15 @@ export default function Step2_EpicApproval() {
 
       {/* Navigation */}
       <div className="flex gap-3">
-        <button onClick={previousStep} className="btn-ghost text-sm">Back</button>
+        <button onClick={previousStep} className="px-4 py-2.5 text-sm font-medium text-gray-600 rounded-xl border border-gray-200 hover:bg-gray-50 transition-all">
+          Back
+        </button>
         <motion.button
           onClick={handleProceed}
           disabled={approvedCount === 0 && totalStories === 0}
-          className="btn-accent flex-1 text-sm"
+          className="flex-1 text-sm font-semibold bg-teal-500 text-white rounded-xl px-6 py-2.5
+                     hover:bg-teal-600 active:scale-[0.98] transition-all
+                     disabled:opacity-40 disabled:cursor-not-allowed"
           whileTap={{ scale: 0.98 }}
         >
           Proceed to Developer Analysis
@@ -202,36 +195,32 @@ function EpicCard({
   approveEpic, approveStory, approveAC, approveTestCase,
   cancelEpic, regenerateEpic, regenerateStory, regenerateAC, regenerateTestCase
 }) {
-  const spotlight = useSpotlight();
-
   return (
     <motion.div
       layout
-      ref={spotlight.ref}
-      onMouseMove={spotlight.onMouseMove}
-      className={`spotlight-card overflow-hidden transition-all duration-300
-        ${epic.approved ? 'border-success/30 bg-success/[0.02]' : ''}`}
+      className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all duration-300
+        ${epic.approved ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-200'}`}
     >
       {/* Epic Header */}
       <div
         onClick={onToggle}
-        className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-[var(--bg-card-hover)] transition-colors"
+        className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors"
       >
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <span className="badge bg-accent-cyan/15 text-accent-cyan shrink-0">{epic.epic_id}</span>
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono bg-teal-100 text-teal-700 shrink-0">{epic.epic_id}</span>
           {epic.approved && (
             <motion.span
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
-              className="badge bg-success/15 text-success shrink-0"
+              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono bg-emerald-100 text-emerald-700 shrink-0"
             >
               <Check className="w-3 h-3 mr-0.5" /> Approved
             </motion.span>
           )}
-          <span className="font-medium text-heading truncate">{clean(epic.epic_title)}</span>
+          <span className="font-medium text-gray-900 truncate">{clean(epic.epic_title)}</span>
         </div>
         <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronDown className="w-4 h-4 text-subtle" />
+          <ChevronDown className="w-4 h-4 text-gray-400" />
         </motion.div>
       </div>
 
@@ -245,62 +234,62 @@ function EpicCard({
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="overflow-hidden"
           >
-            <div className="px-5 pb-5 space-y-4 pt-4" style={{ borderTop: '1px solid var(--border-card)' }}>
-              <p className="text-sm text-muted">{clean(epic.epic_description)}</p>
+            <div className="px-5 pb-5 space-y-4 pt-4 border-t border-gray-100">
+              <p className="text-sm text-gray-600">{clean(epic.epic_description)}</p>
 
               {/* User Stories */}
               {epic.user_stories?.map((story, sIndex) => (
                 <div
                   key={story.story_id}
                   className={`ml-3 pl-4 border-l-2 space-y-3 transition-colors duration-300
-                    ${story.approved ? 'border-success/40' : 'border-default'}`}
+                    ${story.approved ? 'border-emerald-300' : 'border-gray-200'}`}
                 >
                   {/* Story header */}
                   <div>
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <span className="badge bg-purple/15 text-purple">{story.story_id}</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-purple-100 text-purple-700">{story.story_id}</span>
                       {story.story_points && (
-                        <span className="badge bg-warning/15 text-warning">{story.story_points} pts</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-amber-100 text-amber-700">{story.story_points} pts</span>
                       )}
                       {story.approved && (
-                        <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="badge bg-success/15 text-success">
+                        <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-emerald-100 text-emerald-700">
                           Approved
                         </motion.span>
                       )}
                     </div>
-                    <div className="text-sm font-medium text-heading">{clean(story.story_title)}</div>
-                    <div className="text-sm text-muted mt-1">{clean(story.story_description)}</div>
+                    <div className="text-sm font-medium text-gray-900">{clean(story.story_title)}</div>
+                    <div className="text-sm text-gray-500 mt-1">{clean(story.story_description)}</div>
                   </div>
 
                   {/* Acceptance Criteria */}
                   {story.acceptance_criteria && (
                     <div className={`p-3.5 rounded-xl text-sm relative transition-all duration-300
-                      ${story.ac_approved ? 'bg-success/[0.05] border border-success/10' : 'bg-card-theme border border-default'}
+                      ${story.ac_approved ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50 border border-gray-200'}
                       ${regenerating[`ac-${story.story_id}`] ? 'opacity-50 pointer-events-none' : ''}`}
                     >
                       {regenerating[`ac-${story.story_id}`] && (
-                        <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10" style={{ background: 'var(--bg-overlay)' }}>
-                          <span className="text-sm font-medium text-accent-cyan flex items-center gap-2">
+                        <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10 bg-white/80">
+                          <span className="text-sm font-medium text-teal-600 flex items-center gap-2">
                             <Loader2 className="w-4 h-4 animate-spin" /> Regenerating...
                           </span>
                         </div>
                       )}
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-mono uppercase tracking-wider text-subtle">Acceptance Criteria</span>
+                        <span className="text-xs font-mono uppercase tracking-wider text-gray-400">Acceptance Criteria</span>
                         <div className="flex gap-2">
                           {!regenOpen[`ac-${story.story_id}`] && (
-                            <button onClick={() => openRegenInput(`ac-${story.story_id}`)} className="btn-subtle text-xs py-1 px-3">
+                            <button onClick={() => openRegenInput(`ac-${story.story_id}`)} className="text-xs py-1 px-3 rounded-lg font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all">
                               <RefreshCw className="w-3 h-3 inline mr-1" />Regen
                             </button>
                           )}
                           {!story.ac_approved && (
-                            <button onClick={() => approveAC(eIndex, sIndex)} className="btn-subtle text-xs py-1 px-3 bg-success/10 text-success hover:bg-success/20">
+                            <button onClick={() => approveAC(eIndex, sIndex)} className="text-xs py-1 px-3 rounded-lg font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-all">
                               Approve
                             </button>
                           )}
                         </div>
                       </div>
-                      <div className="text-muted whitespace-pre-wrap text-[13px] leading-relaxed">
+                      <div className="text-gray-600 whitespace-pre-wrap text-[13px] leading-relaxed">
                         {clean(story.acceptance_criteria)}
                       </div>
                       <AnimatePresence>
@@ -324,53 +313,52 @@ function EpicCard({
                     <div
                       key={tc.test_case_id}
                       className={`p-3.5 rounded-xl text-sm relative transition-all duration-300
-                        ${tc.approved ? 'bg-success/[0.05] border border-success/10' : 'bg-card-theme border border-default'}
+                        ${tc.approved ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50 border border-gray-200'}
                         ${regenerating[`tc-${tc.test_case_id}`] ? 'opacity-50 pointer-events-none' : ''}`}
                     >
                       {regenerating[`tc-${tc.test_case_id}`] && (
-                        <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10" style={{ background: 'var(--bg-overlay)' }}>
-                          <span className="text-sm font-medium text-accent-cyan flex items-center gap-2">
+                        <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10 bg-white/80">
+                          <span className="text-sm font-medium text-teal-600 flex items-center gap-2">
                             <Loader2 className="w-4 h-4 animate-spin" /> Regenerating...
                           </span>
                         </div>
                       )}
                       <div className="flex items-center justify-between mb-2">
-                        <span className="badge bg-card-theme text-muted">{tc.test_case_id}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-gray-100 text-gray-500">{tc.test_case_id}</span>
                         <div className="flex gap-2">
                           {!regenOpen[`tc-${tc.test_case_id}`] && (
-                            <button onClick={() => openRegenInput(`tc-${tc.test_case_id}`)} className="btn-subtle text-xs py-1 px-3">
+                            <button onClick={() => openRegenInput(`tc-${tc.test_case_id}`)} className="text-xs py-1 px-3 rounded-lg font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all">
                               <RefreshCw className="w-3 h-3 inline mr-1" />Regen
                             </button>
                           )}
                           {!tc.approved && (
-                            <button onClick={() => approveTestCase(eIndex, sIndex, tcIndex)} className="btn-subtle text-xs py-1 px-3 bg-success/10 text-success hover:bg-success/20">
+                            <button onClick={() => approveTestCase(eIndex, sIndex, tcIndex)} className="text-xs py-1 px-3 rounded-lg font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-all">
                               Approve
                             </button>
                           )}
                         </div>
                       </div>
-                      <div className="text-muted text-[13px]">{clean(tc.test_case_description)}</div>
+                      <div className="text-gray-600 text-[13px]">{clean(tc.test_case_description)}</div>
 
-                      {/* Input section */}
                       {(tc.input_preconditions || tc.input_test_data || tc.input_user_action) && (
-                        <div className="mt-2.5 p-3 rounded-lg bg-card-theme border border-default space-y-1.5">
-                          <div className="text-[11px] font-mono uppercase tracking-wider text-faint mb-1.5">Input</div>
+                        <div className="mt-2.5 p-3 rounded-lg bg-gray-50 border border-gray-200 space-y-1.5">
+                          <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-1.5">Input</div>
                           {tc.input_preconditions && (
                             <div className="text-[13px]">
-                              <span className="text-accent-cyan font-medium">Preconditions: </span>
-                              <span className="text-muted">{clean(tc.input_preconditions)}</span>
+                              <span className="text-teal-700 font-medium">Preconditions: </span>
+                              <span className="text-gray-600">{clean(tc.input_preconditions)}</span>
                             </div>
                           )}
                           {tc.input_test_data && (
                             <div className="text-[13px]">
-                              <span className="text-accent-cyan font-medium">Test Data: </span>
-                              <span className="text-muted">{clean(tc.input_test_data)}</span>
+                              <span className="text-teal-700 font-medium">Test Data: </span>
+                              <span className="text-gray-600">{clean(tc.input_test_data)}</span>
                             </div>
                           )}
                           {tc.input_user_action && (
                             <div className="text-[13px]">
-                              <span className="text-accent-cyan font-medium">User Action: </span>
-                              <span className="text-muted">{clean(tc.input_user_action)}</span>
+                              <span className="text-teal-700 font-medium">User Action: </span>
+                              <span className="text-gray-600">{clean(tc.input_user_action)}</span>
                             </div>
                           )}
                         </div>
@@ -378,8 +366,8 @@ function EpicCard({
 
                       {tc.expected_results?.length > 0 && (
                         <div className="mt-2.5">
-                          <div className="text-[11px] font-mono uppercase tracking-wider text-faint mb-1.5">Expected Result</div>
-                          <ul className="ml-4 space-y-1 text-muted text-[13px] list-disc">
+                          <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-1.5">Expected Result</div>
+                          <ul className="ml-4 space-y-1 text-gray-600 text-[13px] list-disc">
                             {tc.expected_results.map((result, i) => (
                               <li key={i}>{clean(result)}</li>
                             ))}
@@ -409,14 +397,14 @@ function EpicCard({
                       disabled={story.approved}
                       className={`text-xs py-2 px-4 rounded-lg font-medium transition-all duration-200
                         ${story.approved
-                          ? 'bg-success/10 text-success/60 cursor-default'
-                          : 'bg-success/15 text-success hover:bg-success/25 hover:shadow-[0_0_12px_rgba(52,211,153,0.15)] cursor-pointer'}`}
+                          ? 'bg-emerald-100 text-emerald-500 cursor-default'
+                          : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer'}`}
                       whileTap={!story.approved ? { scale: 0.95 } : {}}
                     >
                       {story.approved ? <><Check className="w-3 h-3 inline mr-1" />Story Approved</> : 'Approve Story'}
                     </motion.button>
                     {!regenOpen[`story-${story.story_id}`] && (
-                      <button onClick={() => openRegenInput(`story-${story.story_id}`)} className="btn-subtle text-xs py-2 px-4">
+                      <button onClick={() => openRegenInput(`story-${story.story_id}`)} className="text-xs py-2 px-4 rounded-lg font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all">
                         <RefreshCw className="w-3 h-3 inline mr-1" />Regenerate Story
                       </button>
                     )}
@@ -438,28 +426,27 @@ function EpicCard({
               ))}
 
               {/* Epic Actions */}
-              <div className="flex gap-2 pt-3 flex-wrap" style={{ borderTop: '1px solid var(--border-card)' }}>
+              <div className="flex gap-2 pt-3 flex-wrap border-t border-gray-100">
                 <motion.button
                   onClick={() => { if (!epic.approved) { approveEpic(eIndex); onToggle(); } }}
                   disabled={epic.approved}
                   className={`text-sm py-2.5 px-5 rounded-lg font-medium transition-all duration-200
                     ${epic.approved
-                      ? 'bg-success/10 text-success/60 cursor-default'
-                      : 'bg-success hover:shadow-[0_0_20px_rgba(52,211,153,0.3)] cursor-pointer'}`}
-                  style={!epic.approved ? { color: '#fff' } : undefined}
+                      ? 'bg-emerald-100 text-emerald-500 cursor-default'
+                      : 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'}`}
                   whileTap={!epic.approved ? { scale: 0.95 } : {}}
                 >
                   {epic.approved ? <><Check className="w-4 h-4 inline mr-1" />Epic Approved</> : 'Approve Epic'}
                 </motion.button>
                 {!regenOpen[`epic-${epic.epic_id}`] && (
-                  <button onClick={() => openRegenInput(`epic-${epic.epic_id}`)} className="btn-subtle text-sm py-2.5 px-5">
+                  <button onClick={() => openRegenInput(`epic-${epic.epic_id}`)} className="text-sm py-2.5 px-5 rounded-lg font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all">
                     <RefreshCw className="w-3.5 h-3.5 inline mr-1" />Regenerate
                   </button>
                 )}
                 <button
                   onClick={() => { if (confirm('Remove this epic?')) cancelEpic(eIndex); }}
-                  className="text-sm py-2.5 px-5 rounded-lg font-medium text-danger/60 bg-danger/10
-                           hover:bg-danger/20 hover:text-danger transition-all duration-200"
+                  className="text-sm py-2.5 px-5 rounded-lg font-medium text-red-500 bg-red-50
+                           hover:bg-red-100 hover:text-red-600 transition-all duration-200"
                 >
                   <Trash2 className="w-3.5 h-3.5 inline mr-1" />Remove
                 </button>

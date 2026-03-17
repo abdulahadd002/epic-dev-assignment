@@ -3,7 +3,6 @@ import { useWorkflow } from '../../context/WorkflowContext';
 import { useDevelopers } from '../../hooks/useDevelopers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Users, Loader2, ChevronDown, Check, UserPlus } from 'lucide-react';
-import SpotlightCard from '../shared/SpotlightCard';
 import { SkeletonDevCard } from '../shared/Skeleton';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -14,10 +13,10 @@ const COLORS = ['#34D399', '#F87171'];
 const FILE_COLORS = ['#0EA5B0', '#7C5DC7', '#34D399', '#B45309', '#F87171', '#6B7280', '#14B8A6', '#818CF8'];
 
 const toneColors = {
-  purple: { bg: 'bg-purple/15', text: 'text-purple' },
-  blue: { bg: 'bg-blue/15', text: 'text-blue' },
-  green: { bg: 'bg-green/15', text: 'text-green' },
-  yellow: { bg: 'bg-warning/15', text: 'text-warning' },
+  purple: { bg: 'bg-purple-100', text: 'text-purple-700' },
+  blue: { bg: 'bg-blue-100', text: 'text-blue-700' },
+  green: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  yellow: { bg: 'bg-amber-100', text: 'text-amber-700' },
 };
 
 const cardVariants = {
@@ -28,24 +27,25 @@ const cardVariants = {
   })
 };
 
-const chartGrid = 'var(--border-subtle)';
-const chartTick = { fontSize: 10, fill: 'var(--text-tertiary)' };
+const chartGrid = '#e5e7eb';
+const chartTick = { fontSize: 10, fill: '#9ca3af' };
 const chartTooltip = {
   contentStyle: {
-    background: 'var(--bg-surface)',
-    border: '1px solid var(--border-card)',
+    background: '#fff',
+    border: '1px solid #e5e7eb',
     borderRadius: '10px', fontSize: '12px',
     boxShadow: '0 8px 32px rgba(0,0,0,0.08)'
   },
-  itemStyle: { color: 'var(--text-primary)' },
-  labelStyle: { color: 'var(--text-secondary)' }
+  itemStyle: { color: '#1f2937' },
+  labelStyle: { color: '#6b7280' }
 };
+
+const inputCls = "w-full rounded-xl border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all";
 
 export default function Step3_DeveloperAnalysis() {
   const { developers, setDevelopers, nextStep, previousStep } = useWorkflow();
   const { developers: rosterDevs } = useDevelopers();
 
-  // Track which roster devs are selected
   const [selectedRoster, setSelectedRoster] = useState(() => {
     const set = new Set();
     for (const d of developers) {
@@ -56,7 +56,6 @@ export default function Step3_DeveloperAnalysis() {
     return set;
   });
 
-  // New developer analysis inputs
   const [showNewForm, setShowNewForm] = useState(false);
   const [devInputs, setDevInputs] = useState([{ username: '', owner: '', repo: '' }]);
   const [loading, setLoading] = useState(false);
@@ -64,12 +63,10 @@ export default function Step3_DeveloperAnalysis() {
   const [error, setError] = useState(null);
   const [expandedDev, setExpandedDev] = useState(null);
 
-  // Newly analyzed devs (not from roster)
   const [freshAnalyzed, setFreshAnalyzed] = useState(() => {
     return developers.filter((d) => !rosterDevs.some((r) => r.username === d.username));
   });
 
-  // Merge selected roster devs + freshly analyzed into workflow developers
   const mergedDevelopers = useMemo(() => {
     const selected = rosterDevs.filter((r) => selectedRoster.has(r.username));
     const seen = new Set();
@@ -206,13 +203,13 @@ export default function Step3_DeveloperAnalysis() {
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Roster Selection */}
       {rosterDevs.length > 0 && (
-        <SpotlightCard className="p-6 space-y-4">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
           <div>
-            <h2 className="text-heading flex items-center gap-2">
-              <Users className="w-5 h-5 text-accent-cyan" />
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <Users className="w-5 h-5 text-teal-500" />
               Select from Team Roster
             </h2>
-            <p className="text-muted text-sm mt-1">
+            <p className="text-gray-500 text-sm mt-1">
               These developers are already analyzed. Click to select them for this project.
             </p>
           </div>
@@ -226,8 +223,8 @@ export default function Step3_DeveloperAnalysis() {
                   onClick={() => toggleRosterDev(dev.username)}
                   className={`flex items-center gap-3 rounded-xl p-3 text-left transition-all duration-200 border ${
                     isSelected
-                      ? 'bg-accent-cyan/10 border-accent-cyan/30'
-                      : 'bg-card-theme border-default hover:bg-[var(--bg-card-hover)]'
+                      ? 'bg-teal-50 border-teal-300'
+                      : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
                   }`}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -235,24 +232,24 @@ export default function Step3_DeveloperAnalysis() {
                     <img
                       src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
                       alt={dev.username}
-                      className="w-10 h-10 rounded-lg ring-1 ring-default"
+                      className="w-10 h-10 rounded-lg ring-1 ring-gray-200"
                     />
                     {isSelected && (
-                      <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent-cyan flex items-center justify-center">
-                        <Check className="w-3 h-3" style={{ color: '#fff' }} />
+                      <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center">
+                        <Check className="w-3 h-3 text-white" />
                       </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-heading truncate">{dev.username}</span>
+                      <span className="text-sm font-medium text-gray-900 truncate">{dev.username}</span>
                       {dev.experience_level && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-card-theme text-subtle">
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
                           {dev.experience_level}
                         </span>
                       )}
                     </div>
-                    <span className="text-xs text-subtle truncate block">
+                    <span className="text-xs text-gray-400 truncate block">
                       {dev.primary_expertise || 'Full Stack'}
                     </span>
                   </div>
@@ -261,21 +258,21 @@ export default function Step3_DeveloperAnalysis() {
             })}
           </div>
 
-          <div className="text-xs text-faint">
+          <div className="text-xs text-gray-400">
             {selectedRoster.size} of {rosterDevs.length} selected
           </div>
-        </SpotlightCard>
+        </div>
       )}
 
       {/* Analyze New Developers */}
-      <SpotlightCard className="p-6 space-y-5">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-heading flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-accent-cyan" />
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-teal-500" />
               {rosterDevs.length > 0 ? 'Analyze New Developer' : 'Analyze Developers'}
             </h2>
-            <p className="text-muted text-sm mt-1">
+            <p className="text-gray-500 text-sm mt-1">
               {rosterDevs.length > 0
                 ? 'Add a new developer not yet in your roster'
                 : 'Enter GitHub usernames to analyze developer expertise from commit history'}
@@ -284,7 +281,7 @@ export default function Step3_DeveloperAnalysis() {
           {rosterDevs.length > 0 && !showNewForm && (
             <motion.button
               onClick={() => setShowNewForm(true)}
-              className="btn-ghost text-sm flex items-center gap-1.5"
+              className="text-sm font-medium text-gray-600 rounded-xl border border-gray-200 px-3 py-2 hover:bg-gray-50 flex items-center gap-1.5 transition-all"
               whileTap={{ scale: 0.95 }}
             >
               <Plus className="w-4 h-4" /> Add New
@@ -308,7 +305,7 @@ export default function Step3_DeveloperAnalysis() {
                     placeholder="GitHub Username *"
                     value={dev.username}
                     onChange={(e) => updateDeveloperInput(index, 'username', e.target.value)}
-                    className="input-dark flex-1"
+                    className={inputCls + " flex-1"}
                     disabled={loading}
                   />
                   <input
@@ -316,7 +313,7 @@ export default function Step3_DeveloperAnalysis() {
                     placeholder="Owner (optional)"
                     value={dev.owner}
                     onChange={(e) => updateDeveloperInput(index, 'owner', e.target.value)}
-                    className="input-dark flex-1"
+                    className={inputCls + " flex-1"}
                     disabled={loading}
                   />
                   <input
@@ -324,14 +321,14 @@ export default function Step3_DeveloperAnalysis() {
                     placeholder="Repository (optional)"
                     value={dev.repo}
                     onChange={(e) => updateDeveloperInput(index, 'repo', e.target.value)}
-                    className="input-dark flex-1"
+                    className={inputCls + " flex-1"}
                     disabled={loading}
                   />
                   {devInputs.length > 1 && (
                     <motion.button
                       onClick={() => removeDeveloperInput(index)}
                       disabled={loading}
-                      className="w-10 h-10 rounded-xl bg-danger/10 text-danger hover:bg-danger/20 transition-colors flex items-center justify-center shrink-0"
+                      className="w-10 h-10 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors flex items-center justify-center shrink-0"
                       whileTap={{ scale: 0.9 }}
                     >
                       <X className="w-4 h-4" />
@@ -345,14 +342,16 @@ export default function Step3_DeveloperAnalysis() {
               <button
                 onClick={addDeveloperInput}
                 disabled={loading || devInputs.length >= 10}
-                className="btn-ghost text-sm disabled:opacity-40 flex items-center gap-1.5"
+                className="text-sm font-medium text-gray-600 rounded-xl border border-gray-200 px-3 py-2.5 hover:bg-gray-50 disabled:opacity-40 flex items-center gap-1.5 transition-all"
               >
                 <Plus className="w-4 h-4" /> Add Developer
               </button>
               <motion.button
                 onClick={handleAnalyze}
                 disabled={loading}
-                className="btn-accent flex-1 text-sm flex items-center justify-center"
+                className="flex-1 text-sm font-semibold bg-teal-500 text-white rounded-xl px-6 py-2.5
+                           hover:bg-teal-600 active:scale-[0.98] transition-all
+                           disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
                 whileTap={{ scale: 0.98 }}
               >
                 {loading ? (
@@ -371,12 +370,12 @@ export default function Step3_DeveloperAnalysis() {
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-3 rounded-xl bg-danger/10 border border-danger/20"
+            className="p-3 rounded-xl bg-red-50 border border-red-200"
           >
-            <p className="text-danger text-sm">{error}</p>
+            <p className="text-red-600 text-sm">{error}</p>
           </motion.div>
         )}
-      </SpotlightCard>
+      </div>
 
       {/* Loading skeletons */}
       {loading && allDisplayDevs.length === 0 && (
@@ -387,10 +386,10 @@ export default function Step3_DeveloperAnalysis() {
         </div>
       )}
 
-      {/* Results — selected roster + freshly analyzed */}
+      {/* Results */}
       {allDisplayDevs.length > 0 && (
         <div className="space-y-4">
-          <h3 className="text-subtle text-xs font-mono uppercase tracking-wider">
+          <h3 className="text-gray-400 text-xs font-mono uppercase tracking-wider">
             Selected Developers ({allDisplayDevs.length})
           </h3>
 
@@ -406,30 +405,30 @@ export default function Step3_DeveloperAnalysis() {
                 initial="hidden"
                 animate="show"
               >
-                <SpotlightCard className="overflow-hidden">
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                   {/* Summary */}
                   <div className="p-5">
                     <div className="flex items-start gap-4">
                       <img
                         src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
                         alt={dev.username}
-                        className="w-14 h-14 rounded-xl ring-1 ring-default"
+                        className="w-14 h-14 rounded-xl ring-1 ring-gray-200"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <h4 className="font-semibold text-heading">{dev.username}</h4>
+                          <h4 className="font-semibold text-gray-900">{dev.username}</h4>
                           {isFromRoster && (
-                            <span className="badge bg-accent-cyan/15 text-accent-cyan text-[10px]">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-teal-100 text-teal-700">
                               From Roster
                             </span>
                           )}
                           {dev.analysis?.experienceLevel && (
-                            <span className={`badge ${tone.bg} ${tone.text}`}>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono ${tone.bg} ${tone.text}`}>
                               {dev.analysis.experienceLevel.level}
                             </span>
                           )}
                           {dev.analysis?.expertise && (
-                            <span className="badge bg-card-theme text-muted">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-gray-100 text-gray-500">
                               {dev.analysis.expertise.primaryIcon} {dev.analysis.expertise.primary}
                             </span>
                           )}
@@ -444,8 +443,8 @@ export default function Step3_DeveloperAnalysis() {
                               { label: 'Avg Size', value: `${dev.analysis.avgCommitSize} ln` },
                             ].map((stat, i) => (
                               <div key={i}>
-                                <div className="stat-label">{stat.label}</div>
-                                <div className="text-sm font-semibold text-heading">{stat.value}</div>
+                                <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-0.5">{stat.label}</div>
+                                <div className="text-sm font-semibold text-gray-900">{stat.value}</div>
                               </div>
                             ))}
                           </div>
@@ -454,7 +453,7 @@ export default function Step3_DeveloperAnalysis() {
                         {dev.analysis?.expertise?.all && (
                           <div className="flex flex-wrap gap-1.5 mt-3">
                             {dev.analysis.expertise.all.slice(0, 4).map((exp, i) => (
-                              <span key={i} className="badge bg-card-theme text-subtle">
+                              <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-gray-100 text-gray-500">
                                 {exp.icon} {exp.name}
                               </span>
                             ))}
@@ -466,7 +465,7 @@ export default function Step3_DeveloperAnalysis() {
                         {dev.analysis?.totalCommits != null && (
                           <motion.button
                             onClick={() => toggleExpand(index)}
-                            className="btn-subtle text-xs flex items-center gap-1"
+                            className="text-xs py-1.5 px-3 rounded-lg font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 flex items-center gap-1 transition-all"
                             whileTap={{ scale: 0.95 }}
                           >
                             {expandedDev === index ? 'Hide' : 'Details'}
@@ -478,7 +477,7 @@ export default function Step3_DeveloperAnalysis() {
                         {!isFromRoster && (
                           <motion.button
                             onClick={() => removeFreshDev(dev.username)}
-                            className="btn-subtle text-xs text-danger/70 hover:text-danger"
+                            className="text-xs py-1.5 px-3 rounded-lg font-medium text-red-400 bg-gray-100 hover:text-red-600 hover:bg-red-50 transition-all"
                             whileTap={{ scale: 0.95 }}
                           >
                             <X className="w-3 h-3" />
@@ -498,23 +497,23 @@ export default function Step3_DeveloperAnalysis() {
                         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                         className="overflow-hidden"
                       >
-                        <div className="px-5 pb-5 pt-5 space-y-5" style={{ borderTop: '1px solid var(--border-card)' }}>
+                        <div className="px-5 pb-5 pt-5 space-y-5 border-t border-gray-100">
                           {/* Experience banner */}
-                          <div className="rounded-2xl bg-gradient-to-r from-accent-cyan/10 to-purple/10 border border-default p-5">
-                            <div className="text-xs font-mono uppercase tracking-wider text-subtle mb-2">Experience Level</div>
-                            <div className="text-xl font-bold text-heading mb-3">{dev.analysis.experienceLevel.level}</div>
+                          <div className="rounded-2xl bg-gradient-to-r from-teal-50 to-purple-50 border border-gray-200 p-5">
+                            <div className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">Experience Level</div>
+                            <div className="text-xl font-bold text-gray-900 mb-3">{dev.analysis.experienceLevel.level}</div>
                             <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <div className="stat-label">Lines Changed</div>
+                                <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-0.5">Lines Changed</div>
                                 <div className="text-sm font-semibold">
-                                  <span className="text-success">+{dev.analysis.totalLinesAdded.toLocaleString()}</span>
+                                  <span className="text-emerald-600">+{dev.analysis.totalLinesAdded.toLocaleString()}</span>
                                   {' / '}
-                                  <span className="text-danger">-{dev.analysis.totalLinesDeleted.toLocaleString()}</span>
+                                  <span className="text-red-500">-{dev.analysis.totalLinesDeleted.toLocaleString()}</span>
                                 </div>
                               </div>
                               <div>
-                                <div className="stat-label">Avg Commit Size</div>
-                                <div className="text-sm font-semibold text-heading">{dev.analysis.avgCommitSize} lines</div>
+                                <div className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mb-0.5">Avg Commit Size</div>
+                                <div className="text-sm font-semibold text-gray-900">{dev.analysis.avgCommitSize} lines</div>
                               </div>
                             </div>
                           </div>
@@ -614,17 +613,20 @@ export default function Step3_DeveloperAnalysis() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </SpotlightCard>
+                </div>
               </motion.div>
             );
           })}
 
           {/* Navigation */}
           <div className="flex gap-3 pt-2">
-            <button onClick={previousStep} className="btn-ghost text-sm">Back</button>
+            <button onClick={previousStep} className="px-4 py-2.5 text-sm font-medium text-gray-600 rounded-xl border border-gray-200 hover:bg-gray-50 transition-all">
+              Back
+            </button>
             <motion.button
               onClick={handleProceed}
-              className="btn-accent flex-1 text-sm"
+              className="flex-1 text-sm font-semibold bg-teal-500 text-white rounded-xl px-6 py-2.5
+                         hover:bg-teal-600 active:scale-[0.98] transition-all"
               whileTap={{ scale: 0.98 }}
             >
               Proceed to Assignment
@@ -636,10 +638,13 @@ export default function Step3_DeveloperAnalysis() {
       {/* Navigation when no devs selected yet */}
       {allDisplayDevs.length === 0 && (
         <div className="flex gap-3 pt-2">
-          <button onClick={previousStep} className="btn-ghost text-sm">Back</button>
+          <button onClick={previousStep} className="px-4 py-2.5 text-sm font-medium text-gray-600 rounded-xl border border-gray-200 hover:bg-gray-50 transition-all">
+            Back
+          </button>
           <motion.button
             onClick={handleProceed}
-            className="btn-accent flex-1 text-sm opacity-50"
+            className="flex-1 text-sm font-semibold bg-teal-500 text-white rounded-xl px-6 py-2.5
+                       hover:bg-teal-600 active:scale-[0.98] transition-all opacity-50"
             whileTap={{ scale: 0.98 }}
           >
             Proceed to Assignment
@@ -652,8 +657,8 @@ export default function Step3_DeveloperAnalysis() {
 
 function ChartCard({ title, children }) {
   return (
-    <div className="rounded-xl bg-card-theme border border-default p-4">
-      <div className="text-xs font-mono uppercase tracking-wider text-faint mb-3">{title}</div>
+    <div className="rounded-xl bg-gray-50 border border-gray-200 p-4">
+      <div className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-3">{title}</div>
       {children}
     </div>
   );

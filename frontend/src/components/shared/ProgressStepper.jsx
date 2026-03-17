@@ -42,10 +42,9 @@ export default function ProgressStepper() {
                   disabled={isUpcoming}
                   className="relative group"
                 >
-                  {/* Glow ring for current */}
                   {isCurrent && (
                     <motion.div
-                      className="absolute -inset-1.5 rounded-2xl bg-accent-cyan/20 blur-sm"
+                      className="absolute -inset-1.5 rounded-2xl bg-teal-400/20 blur-sm"
                       layoutId="stepGlow"
                       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                     />
@@ -53,13 +52,11 @@ export default function ProgressStepper() {
                   <motion.div
                     className={`
                       relative w-10 h-10 rounded-xl flex items-center justify-center
-                      text-sm font-mono font-semibold
-                      transition-colors duration-300
-                      ${isCompleted ? 'bg-accent-cyan/15 text-accent-cyan cursor-pointer group-hover:bg-accent-cyan/25' : ''}
-                      ${isCurrent ? 'bg-accent-cyan cursor-pointer' : ''}
-                      ${isUpcoming ? 'bg-card-theme text-faint cursor-not-allowed' : ''}
+                      text-sm font-mono font-semibold transition-colors duration-300
+                      ${isCompleted ? 'bg-teal-100 text-teal-700 cursor-pointer group-hover:bg-teal-200' : ''}
+                      ${isCurrent ? 'bg-teal-500 text-white cursor-pointer' : ''}
+                      ${isUpcoming ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}
                     `}
-                    style={isCurrent ? { color: '#fff' } : undefined}
                     whileHover={!isUpcoming ? { scale: 1.08 } : {}}
                     whileTap={!isUpcoming ? { scale: 0.95 } : {}}
                   >
@@ -79,17 +76,17 @@ export default function ProgressStepper() {
                 <div className="mt-2.5 text-center">
                   <div className={`
                     text-[11px] font-mono uppercase tracking-widest transition-colors duration-300
-                    ${isCurrent ? 'text-accent-cyan' : ''}
-                    ${isCompleted ? 'text-accent-cyan/50' : ''}
-                    ${isUpcoming ? 'text-faint' : ''}
+                    ${isCurrent ? 'text-teal-600' : ''}
+                    ${isCompleted ? 'text-teal-500' : ''}
+                    ${isUpcoming ? 'text-gray-400' : ''}
                   `}>
                     {step.label}
                   </div>
                   <div className={`
                     text-xs mt-0.5 transition-colors duration-300
-                    ${isCurrent ? 'text-heading' : ''}
-                    ${isCompleted ? 'text-subtle' : ''}
-                    ${isUpcoming ? 'text-faint' : ''}
+                    ${isCurrent ? 'text-gray-900 font-medium' : ''}
+                    ${isCompleted ? 'text-gray-500' : ''}
+                    ${isUpcoming ? 'text-gray-400' : ''}
                   `}>
                     {step.title}
                   </div>
@@ -97,10 +94,10 @@ export default function ProgressStepper() {
               </div>
               {index < steps.length - 1 && (
                 <div className="flex-1 mx-1 -mt-6 relative">
-                  <div className="h-px w-full" style={{ background: 'var(--border-card)' }} />
+                  <div className="h-px w-full bg-gray-200" />
                   {isCompleted && (
                     <motion.div
-                      className="absolute top-0 left-0 h-px bg-gradient-to-r from-accent-cyan/40 to-accent-cyan/10"
+                      className="absolute top-0 left-0 h-px bg-gradient-to-r from-teal-400 to-teal-200"
                       initial={{ width: 0 }}
                       animate={{ width: '100%' }}
                       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}

@@ -112,7 +112,6 @@ function WizardContent() {
     );
 
     try {
-      // Sync to Jira
       const res = await fetch('/api/ai/sync-jira', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,7 +135,6 @@ function WizardContent() {
 
       const data = await res.json();
 
-      // Update epics/stories with Jira keys
       const updatedEpics = epics.map((epic) => {
         const result = (data.results || []).find((r) => r.epicId === epic.id);
         if (!result) return epic;
@@ -150,10 +148,8 @@ function WizardContent() {
         };
       });
 
-      // Save analyzed developers to roster
       if (developers.length > 0) addDevelopers(developers);
 
-      // Save project
       const projectId = Date.now().toString();
       addProject({
         id: projectId,
@@ -172,8 +168,6 @@ function WizardContent() {
 
       setSyncStatus('success');
       reset();
-
-      // Navigate to project detail
       setTimeout(() => navigate(`/projects/${projectId}`), 1500);
     } catch (err) {
       setSyncStatus('error');
@@ -190,7 +184,6 @@ function WizardContent() {
     const epics = transformEpicsForProject(generatedEpics);
     const flatAssignments = transformAssignmentsForProject(assignments);
 
-    // Save analyzed developers to roster
     if (developers.length > 0) addDevelopers(developers);
 
     const projectId = Date.now().toString();
@@ -211,21 +204,14 @@ function WizardContent() {
 
   return (
     <div className="relative min-h-screen px-6 py-8">
-      {/* Subtle ambient background for visual depth */}
-      <div className="ambient-bg">
-        <div className="ambient-orb ambient-orb-1" />
-        <div className="ambient-orb ambient-orb-2" />
-        <div className="ambient-orb ambient-orb-3" />
-      </div>
-
       <div className="relative z-10 max-w-7xl mx-auto">
           <ProgressStepper />
 
           {/* Project Name — visible on Step 1 */}
           {currentStep === 1 && (
             <div className="mt-8 max-w-3xl mx-auto">
-              <div className="spotlight-card p-5">
-                <label className="block text-xs font-mono uppercase tracking-wider text-subtle mb-2">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+                <label className="block text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">
                   Project Name
                 </label>
                 <input
@@ -233,7 +219,8 @@ function WizardContent() {
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
                   placeholder="Enter project name..."
-                  className="input-dark w-full"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-4 py-2.5 text-sm
+                             focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
                 />
               </div>
             </div>
@@ -247,7 +234,7 @@ function WizardContent() {
             </AnimatePresence>
           </div>
 
-          {/* Step 5: Save & Sync — shows after Step 4 when assignments exist */}
+          {/* Step 5: Save & Sync */}
           {currentStep === 4 && assignments.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -256,9 +243,9 @@ function WizardContent() {
               className="mt-10 max-w-3xl mx-auto space-y-6"
             >
               {/* Sprint Deadline */}
-              <div className="spotlight-card p-6">
-                <h3 className="text-sm font-semibold text-heading flex items-center gap-2 mb-4">
-                  <Clock className="h-4 w-4 text-accent-cyan" />
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
+                  <Clock className="h-4 w-4 text-teal-500" />
                   Sprint Deadline
                 </h3>
                 <div className="flex items-center gap-3">
@@ -269,12 +256,14 @@ function WizardContent() {
                     value={deadlineValue}
                     onChange={(e) => setDeadlineValue(e.target.value)}
                     placeholder="e.g. 2"
-                    className="input-dark w-24"
+                    className="w-24 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-3 py-2.5 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
                   />
                   <select
                     value={deadlineUnit}
                     onChange={(e) => setDeadlineUnit(e.target.value)}
-                    className="input-dark"
+                    className="rounded-xl border border-gray-200 bg-gray-50 text-gray-900 px-3 py-2.5 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
                   >
                     <option value="hours">Hours</option>
                     <option value="days">Days</option>
@@ -282,37 +271,37 @@ function WizardContent() {
                     <option value="months">Months</option>
                   </select>
                   {deadlineEndDate && (
-                    <span className="flex items-center gap-1.5 text-sm text-muted">
-                      <Calendar className="h-4 w-4 text-subtle" />
-                      Ends: <span className="font-medium text-heading">{deadlineEndDate}</span>
+                    <span className="flex items-center gap-1.5 text-sm text-gray-500">
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                      Ends: <span className="font-medium text-gray-900">{deadlineEndDate}</span>
                     </span>
                   )}
                 </div>
               </div>
 
               {/* Sync to Jira */}
-              <div className="spotlight-card p-6">
-                <h3 className="text-sm font-semibold text-heading mb-4">Save & Sync to Jira</h3>
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">Save & Sync to Jira</h3>
 
                 {syncStatus === 'success' ? (
-                  <div className="flex items-center gap-2 text-success">
+                  <div className="flex items-center gap-2 text-emerald-600">
                     <CheckCircle2 className="h-5 w-5" />
                     <span className="text-sm font-medium">Successfully synced! Redirecting...</span>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <p className="text-sm text-muted">
+                    <p className="text-sm text-gray-500">
                       A new Jira project will be created automatically with all approved epics, stories, and assignments.
                     </p>
 
                     {syncError && (
                       <div className="space-y-3">
-                        <div className="flex items-center gap-2 rounded-xl bg-danger/10 border border-danger/20 px-4 py-3 text-sm text-danger">
+                        <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
                           <AlertCircle className="h-4 w-4 flex-shrink-0" />
                           {syncError}
                         </div>
                         <div>
-                          <label className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-subtle mb-2">
+                          <label className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">
                             <Pencil className="h-3 w-3" />
                             Rename Project & Retry
                           </label>
@@ -321,7 +310,8 @@ function WizardContent() {
                             value={projectName}
                             onChange={(e) => { setProjectName(e.target.value); setSyncError(''); setSyncStatus('idle'); }}
                             placeholder="Enter a new project name..."
-                            className="input-dark w-full"
+                            className="w-full rounded-xl border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-4 py-2.5 text-sm
+                                       focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
                           />
                         </div>
                       </div>
@@ -331,7 +321,10 @@ function WizardContent() {
                       <button
                         onClick={handleSaveAndSync}
                         disabled={syncStatus === 'syncing'}
-                        className="btn-accent flex items-center gap-2 px-6 py-2.5 text-sm"
+                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold
+                                   bg-teal-500 text-white rounded-xl
+                                   hover:bg-teal-600 active:scale-[0.98] transition-all
+                                   disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {syncStatus === 'syncing' ? (
                           <>
@@ -349,7 +342,9 @@ function WizardContent() {
                       <button
                         onClick={handleSaveOnly}
                         disabled={syncStatus === 'syncing' || saving}
-                        className="btn-ghost px-4 py-2.5 text-sm"
+                        className="px-4 py-2.5 text-sm font-medium text-gray-600 rounded-xl
+                                   border border-gray-200 hover:bg-gray-50 hover:text-gray-900
+                                   active:scale-[0.98] transition-all"
                       >
                         {saving ? 'Saving...' : 'Save Without Jira'}
                       </button>

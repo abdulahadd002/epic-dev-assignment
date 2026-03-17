@@ -24,6 +24,8 @@ import ProjectsPage from './pages/projects/ProjectsPage'
 import ProjectWizardPage from './pages/projects/ProjectWizardPage'
 import ProjectDetailPage from './pages/projects/ProjectDetailPage'
 import ProjectKanbanPage from './pages/projects/ProjectKanbanPage'
+import VerifyPage from './pages/projects/VerifyPage'
+import AssignPage from './pages/projects/AssignPage'
 import DevelopersPage from './pages/DevelopersPage'
 import Dashboard from './pages/jira/Dashboard'
 import Kanban from './pages/jira/Kanban'
@@ -126,6 +128,12 @@ function App() {
             } />
             <Route path="/projects/:projectId" element={
               <AuthGuard><SidebarLayout><ProjectDetailPage /></SidebarLayout></AuthGuard>
+            } />
+            <Route path="/projects/:projectId/verify" element={
+              <AuthGuard><SidebarLayout><VerifyPage /></SidebarLayout></AuthGuard>
+            } />
+            <Route path="/projects/:projectId/assign" element={
+              <AuthGuard><SidebarLayout><AssignPage /></SidebarLayout></AuthGuard>
             } />
             <Route path="/projects/:projectId/kanban" element={
               <AuthGuard><SidebarLayout><ProjectKanbanPage /></SidebarLayout></AuthGuard>

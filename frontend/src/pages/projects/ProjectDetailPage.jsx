@@ -1,14 +1,909 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useProjects } from '../../hooks/useProjects';
-import { ArrowLeft, Columns3 } from 'lucide-react';
+import { useSprintIssues, useBurndownData, useSprintDetails } from '../../hooks/useSprintData';
+import { useAlerts } from '../../hooks/useAlerts';
+import { calculateHealthScore } from '../../utils/healthScore';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ArrowLeft, Columns3, Users, BookOpen, CheckCircle2, Clock, AlertTriangle,
+  TrendingUp, TrendingDown, BarChart3, ChevronDown, ExternalLink, RefreshCw,
+  Target, Layers, GitBranch, Activity, Calendar, Shield, Flame, Bug,
+  ClipboardCheck, UserPlus, LayoutDashboard, FileText, GripVertical
+} from 'lucide-react';
+import {
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend, AreaChart, Area
+} from 'recharts';
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, closestCorners } from '@dnd-kit/core';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const statusConfig = {
   'epics-ready': { label: 'Epics Ready', color: 'bg-blue-100 text-blue-700' },
   'stories-ready': { label: 'Stories Ready', color: 'bg-purple-100 text-purple-700' },
-  assigned: { label: 'Assigned', color: 'bg-yellow-100 text-yellow-700' },
-  synced: { label: 'Synced to Jira', color: 'bg-green-100 text-green-700' },
+  assigned: { label: 'Assigned', color: 'bg-amber-100 text-amber-700' },
+  synced: { label: 'Synced to Jira', color: 'bg-emerald-100 text-emerald-700' },
 };
+
+const chartTooltip = {
+  contentStyle: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', fontSize: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.08)' },
+  itemStyle: { color: '#1f2937' }, labelStyle: { color: '#6b7280' }
+};
+
+function StatCard({ icon: Icon, label, value, subtext, color = 'text-gray-900' }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${color === 'text-teal-600' ? 'bg-teal-50' : color === 'text-purple-600' ? 'bg-purple-50' : color === 'text-amber-600' ? 'bg-amber-50' : color === 'text-emerald-600' ? 'bg-emerald-50' : color === 'text-red-600' ? 'bg-red-50' : color === 'text-blue-600' ? 'bg-blue-50' : 'bg-gray-50'}`}>
+          <Icon className={`w-4 h-4 ${color}`} />
+        </div>
+        <span className="text-[11px] font-mono uppercase tracking-wider text-gray-400">{label}</span>
+      </div>
+      <div className={`text-2xl font-bold ${color}`}>{value}</div>
+      {subtext && <div className="text-xs text-gray-400 mt-0.5">{subtext}</div>}
+    </div>
+  );
+}
+
+function HealthBar({ score, level }) {
+  const colors = {
+    healthy: { bar: 'bg-emerald-500', text: 'text-emerald-700', label: 'Healthy' },
+    'at-risk': { bar: 'bg-amber-500', text: 'text-amber-700', label: 'At Risk' },
+    critical: { bar: 'bg-red-500', text: 'text-red-700', label: 'Critical' },
+  };
+  const c = colors[level] || colors.healthy;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className={`text-sm font-semibold ${c.text}`}>{c.label}</span>
+        <span className="text-sm font-bold text-gray-900">{score}/100</span>
+      </div>
+      <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+        <motion.div
+          className={`h-full rounded-full ${c.bar}`}
+          initial={{ width: 0 }}
+          animate={{ width: `${score}%` }}
+          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function normalizeStatus(status) {
+  const s = (status || '').toLowerCase();
+  if (s.includes('done') || s.includes('closed') || s.includes('resolved')) return 'Done';
+  if (s.includes('progress') || s.includes('review')) return 'In Progress';
+  return 'To Do';
+}
+
+const cardColorsByColumn = {
+  'To Do': {
+    bg: 'bg-gray-50',
+    border: 'border-gray-200 hover:border-gray-300',
+    key: 'text-gray-500',
+    grip: 'text-gray-300',
+    sp: 'bg-gray-100 text-gray-500',
+    accent: 'border-l-gray-400',
+  },
+  'In Progress': {
+    bg: 'bg-blue-50/50',
+    border: 'border-blue-200 hover:border-blue-300',
+    key: 'text-blue-600',
+    grip: 'text-blue-300',
+    sp: 'bg-blue-100 text-blue-600',
+    accent: 'border-l-blue-500',
+  },
+  'Done': {
+    bg: 'bg-emerald-50/50',
+    border: 'border-emerald-200 hover:border-emerald-300',
+    key: 'text-emerald-600',
+    grip: 'text-emerald-300',
+    sp: 'bg-emerald-100 text-emerald-600',
+    accent: 'border-l-emerald-500',
+  },
+};
+
+function DraggableCard({ issue, isDragOverlay, column }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: issue.key,
+    data: { issue },
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+  };
+
+  const cc = cardColorsByColumn[column] || cardColorsByColumn['To Do'];
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={isDragOverlay ? {} : style}
+      {...attributes}
+      {...listeners}
+      className={`rounded-lg border border-l-[3px] p-2.5 transition-colors cursor-grab active:cursor-grabbing ${cc.accent} ${cc.bg} ${
+        isDragOverlay ? 'border-teal-400 shadow-lg shadow-teal-100 ring-2 ring-teal-200' : cc.border
+      }`}
+    >
+      <div className="flex items-center gap-1.5 mb-1">
+        <GripVertical className={`w-3 h-3 shrink-0 ${cc.grip}`} />
+        <span className={`text-[10px] font-mono ${cc.key}`}>{issue.key}</span>
+        {(issue.priority === 'Blocker' || issue.priority === 'Critical') && (
+          <Flame className="w-3 h-3 text-red-500" />
+        )}
+      </div>
+      <div className="text-xs text-gray-700 line-clamp-2">{issue.summary}</div>
+      <div className="flex items-center justify-between mt-1.5">
+        <span className="text-[10px] text-gray-400">{issue.assignee?.name || 'Unassigned'}</span>
+        {issue.storyPoints != null && (
+          <span className={`text-[10px] font-mono rounded px-1.5 py-0.5 ${cc.sp}`}>{issue.storyPoints}SP</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DroppableColumn({ id, items, colStyle }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+
+  return (
+    <div ref={setNodeRef} className="min-h-[200px]">
+      <div className={`rounded-lg px-3 py-2 mb-2 flex items-center justify-between ${colStyle.header}`}>
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${colStyle.dot}`} />
+          <span className="text-xs font-semibold">{id}</span>
+        </div>
+        <span className="text-xs font-mono">{items.length}</span>
+      </div>
+      <div className={`space-y-1.5 max-h-[400px] overflow-y-auto rounded-lg p-1 transition-colors ${
+        isOver ? 'bg-teal-50 ring-2 ring-teal-200 ring-inset' : ''
+      }`}>
+        {items.map(issue => (
+          <DraggableCard key={issue.key} issue={issue} column={id} />
+        ))}
+        {items.length === 0 && (
+          <div className={`text-center py-8 text-xs rounded-lg border-2 border-dashed ${
+            isOver ? 'border-teal-300 text-teal-500 bg-teal-50' : 'border-gray-200 text-gray-400'
+          }`}>
+            {isOver ? 'Drop here' : 'No items'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InteractiveKanban({ issues, mutateIssues }) {
+  // Track all in-flight optimistic moves: { issueKey -> targetColumn }
+  const [pendingMoves, setPendingMoves] = useState({});
+  const [activeIssue, setActiveIssue] = useState(null);
+  const [syncingKey, setSyncingKey] = useState(null);
+
+  // Merge SWR issues with any pending optimistic moves
+  const mergedIssues = useMemo(() => {
+    if (Object.keys(pendingMoves).length === 0) return issues;
+    return (issues || []).map(issue => {
+      if (pendingMoves[issue.key]) {
+        return { ...issue, status: pendingMoves[issue.key] };
+      }
+      return issue;
+    });
+  }, [issues, pendingMoves]);
+
+  const columns = useMemo(() => {
+    const cols = { 'To Do': [], 'In Progress': [], 'Done': [] };
+    (mergedIssues || []).forEach(issue => {
+      cols[normalizeStatus(issue.status)].push(issue);
+    });
+    return cols;
+  }, [mergedIssues]);
+
+  const colStyles = {
+    'To Do': { header: 'text-gray-600 bg-gray-50', dot: 'bg-gray-400' },
+    'In Progress': { header: 'text-blue-600 bg-blue-50', dot: 'bg-blue-500' },
+    'Done': { header: 'text-emerald-600 bg-emerald-50', dot: 'bg-emerald-500' },
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
+  const findIssueByKey = useCallback((key) => {
+    return (mergedIssues || []).find(i => i.key === key);
+  }, [mergedIssues]);
+
+  const handleDragStart = useCallback((event) => {
+    setActiveIssue(findIssueByKey(event.active.id));
+  }, [findIssueByKey]);
+
+  const handleDragEnd = useCallback(async (event) => {
+    setActiveIssue(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const issueKey = active.id;
+    // Determine target column: over.id is either a column name or another card's key
+    let targetColumn = over.id;
+    if (!['To Do', 'In Progress', 'Done'].includes(targetColumn)) {
+      // Dropped onto a card — find which column that card is in
+      const overIssue = findIssueByKey(over.id);
+      if (overIssue) {
+        targetColumn = normalizeStatus(overIssue.status);
+      } else {
+        return;
+      }
+    }
+
+    const issue = findIssueByKey(issueKey);
+    if (!issue) return;
+
+    const currentColumn = normalizeStatus(issue.status);
+    if (currentColumn === targetColumn) return;
+
+    // Optimistic update — add to pending moves so card stays put
+    // even when SWR refreshes with old data
+    setPendingMoves(prev => ({ ...prev, [issueKey]: targetColumn }));
+    setSyncingKey(issueKey);
+
+    try {
+      // Fetch available transitions from Jira
+      const res = await fetch(`/api/jira/issue/${issueKey}`);
+      if (!res.ok) throw new Error('Failed to fetch transitions');
+      const { transitions } = await res.json();
+
+      const target = targetColumn.toLowerCase();
+      const transition = transitions.find((t) => {
+        const name = t.name.toLowerCase();
+        if (target === 'done') return name.includes('done') || name.includes('close') || name.includes('resolv');
+        if (target === 'in progress') return name.includes('progress') || name.includes('start');
+        return name.includes('todo') || name.includes('to do') || name.includes('backlog') || name.includes('open');
+      });
+
+      if (!transition) {
+        throw new Error(`No transition found for "${targetColumn}"`);
+      }
+
+      // Execute the transition in Jira
+      const putRes = await fetch(`/api/jira/issue/${issueKey}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transitionId: transition.id }),
+      });
+      if (!putRes.ok) throw new Error('Transition failed');
+
+      // Wait for Jira data to refresh, then clear the pending move
+      await mutateIssues();
+      setPendingMoves(prev => {
+        const next = { ...prev };
+        delete next[issueKey];
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to transition issue:', err);
+      // Revert — remove the pending move so card snaps back to real Jira state
+      setPendingMoves(prev => {
+        const next = { ...prev };
+        delete next[issueKey];
+        return next;
+      });
+    } finally {
+      setSyncingKey(null);
+    }
+  }, [findIssueByKey, mutateIssues]);
+
+  return (
+    <div>
+      {syncingKey && (
+        <div className="mb-3 flex items-center gap-2 text-xs text-teal-600 bg-teal-50 rounded-lg px-3 py-2 border border-teal-200">
+          <RefreshCw className="w-3 h-3 animate-spin" />
+          Syncing {syncingKey} to Jira...
+        </div>
+      )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="grid grid-cols-3 gap-3">
+          {Object.entries(columns).map(([name, items]) => (
+            <DroppableColumn
+              key={name}
+              id={name}
+              items={items}
+              colStyle={colStyles[name]}
+            />
+          ))}
+        </div>
+        <DragOverlay>
+          {activeIssue ? <DraggableCard issue={activeIssue} isDragOverlay column={normalizeStatus(activeIssue.status)} /> : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
+  );
+}
+
+function computeLocalHealth(project) {
+  const factors = [];
+  let score = 100;
+  const totalEpics = project.epics?.length || 0;
+  const approvedEpics = project.epics?.filter(e => e.status === 'approved').length || 0;
+  const totalStories = project.epics?.reduce((s, e) => s + (e.stories?.length || 0), 0) || 0;
+  const assignmentCount = project.assignments?.length || 0;
+  const devCount = project.analyzedDevelopers?.length || 0;
+
+  // Epic approval progress (30 points)
+  const approvalPct = totalEpics > 0 ? approvedEpics / totalEpics : 0;
+  const approvalScore = Math.round(approvalPct * 30);
+  factors.push({ name: 'Epic Approval', score: approvalScore, max: 30, detail: `${approvedEpics}/${totalEpics} approved` });
+  score -= 30 - approvalScore;
+
+  // Developer assignment (30 points)
+  const assignPct = totalEpics > 0 ? Math.min(1, assignmentCount / totalEpics) : 0;
+  const assignScore = Math.round(assignPct * 30);
+  factors.push({ name: 'Assignments', score: assignScore, max: 30, detail: `${assignmentCount}/${totalEpics} epics assigned` });
+  score -= 30 - assignScore;
+
+  // Team readiness (20 points) — have devs been analyzed?
+  const teamScore = devCount > 0 ? 20 : 0;
+  factors.push({ name: 'Team', score: teamScore, max: 20, detail: devCount > 0 ? `${devCount} developer${devCount !== 1 ? 's' : ''} analyzed` : 'No developers analyzed' });
+  score -= 20 - teamScore;
+
+  // Deadline pressure (20 points)
+  let deadlineScore = 20;
+  if (project.deadline?.value) {
+    const created = project.createdAt ? new Date(project.createdAt) : new Date();
+    const end = new Date(created);
+    const v = parseInt(project.deadline.value);
+    switch (project.deadline.unit) {
+      case 'hours': end.setHours(end.getHours() + v); break;
+      case 'days': end.setDate(end.getDate() + v); break;
+      case 'months': end.setMonth(end.getMonth() + v); break;
+      default: end.setDate(end.getDate() + v * 7); break;
+    }
+    const daysLeft = Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
+    if (daysLeft < 0) {
+      deadlineScore = 0;
+      factors.push({ name: 'Deadline', score: 0, max: 20, detail: `${Math.abs(daysLeft)}d overdue` });
+    } else if (daysLeft <= 3) {
+      deadlineScore = 5;
+      factors.push({ name: 'Deadline', score: 5, max: 20, detail: `${daysLeft}d remaining — urgent` });
+    } else if (daysLeft <= 7) {
+      deadlineScore = 12;
+      factors.push({ name: 'Deadline', score: 12, max: 20, detail: `${daysLeft}d remaining` });
+    } else {
+      factors.push({ name: 'Deadline', score: 20, max: 20, detail: `${daysLeft}d remaining` });
+    }
+  } else {
+    factors.push({ name: 'Deadline', score: 20, max: 20, detail: 'No deadline set' });
+  }
+  score -= 20 - deadlineScore;
+
+  const finalScore = Math.max(0, Math.min(100, Math.round(score)));
+  const level = finalScore >= 75 ? 'healthy' : finalScore >= 50 ? 'at-risk' : 'critical';
+  return { score: finalScore, level, factors };
+}
+
+function EpicsStories({ project }) {
+  const [expandedEpic, setExpandedEpic] = useState(null);
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+        <Layers className="w-4 h-4 text-purple-500" /> Epics & Stories
+      </h3>
+      <div className="space-y-2">
+        {(project.epics || []).map((epic) => {
+          const storyCount = epic.stories?.length || 0;
+          const epicPoints = epic.stories?.reduce((s, st) => s + (st.storyPoints || 0), 0) || 0;
+          const isExpanded = expandedEpic === epic.id;
+          const assignment = (project.assignments || []).find(a => (a.epic_id || a.epicId) === epic.id);
+
+          return (
+            <div key={epic.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => setExpandedEpic(isExpanded ? null : epic.id)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {epic.jiraKey && <span className="text-[10px] font-mono bg-blue-50 text-blue-600 rounded px-1.5 py-0.5">{epic.jiraKey}</span>}
+                  <span className="text-sm font-medium text-gray-900 truncate">{epic.title}</span>
+                  <span className={`text-[10px] rounded-full px-2 py-0.5 ${epic.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {epic.status || 'pending'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 ml-3 shrink-0">
+                  <span className="text-xs text-gray-400">{storyCount} stories · {epicPoints} pts</span>
+                  {assignment && (
+                    <span className="text-xs text-teal-600">@{assignment.assigned_developer || assignment.developer}</span>
+                  )}
+                  <motion.div animate={{ rotate: isExpanded ? 180 : 0 }}>
+                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                  </motion.div>
+                </div>
+              </button>
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="px-4 pb-3 border-t border-gray-100 pt-3 space-y-2">
+                      {epic.description && <p className="text-xs text-gray-500 mb-2">{epic.description}</p>}
+                      {(epic.stories || []).map(story => (
+                        <div key={story.id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-gray-50">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-gray-800">{story.title}</div>
+                            {story.description && <div className="text-[11px] text-gray-400 truncate mt-0.5">{story.description}</div>}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {story.storyPoints && <span className="text-[10px] font-mono bg-white rounded border border-gray-200 px-1.5 py-0.5 text-gray-500">{story.storyPoints} SP</span>}
+                            {story.jiraKey && <span className="text-[10px] font-mono text-blue-600">{story.jiraKey}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function StoryPointsChart({ project }) {
+  const totalPoints = project.epics?.reduce((s, e) =>
+    s + (e.stories?.reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0) || 0;
+  if (!project.epics?.length) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <BarChart3 className="w-4 h-4 text-teal-500" /> Story Points by Epic
+      </h3>
+      <div className="space-y-3">
+        {project.epics.map((epic) => {
+          const epicPts = epic.stories?.reduce((s, st) => s + (st.storyPoints || 0), 0) || 0;
+          const pct = totalPoints > 0 ? Math.round((epicPts / totalPoints) * 100) : 0;
+          return (
+            <div key={epic.id}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-700 truncate max-w-[60%]">{epic.title}</span>
+                <span className="text-xs font-mono text-gray-500">{epicPts} pts ({pct}%)</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-teal-400 to-teal-500 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${pct}%` }}
+                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DeveloperTiles({ project }) {
+  if (!project.analyzedDevelopers?.length) return null;
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+        <Users className="w-4 h-4 text-teal-500" /> Assigned Developers
+      </h3>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {project.analyzedDevelopers.map(dev => {
+          const assigned = (project.assignments || []).filter(a =>
+            (a.assigned_developer || a.developer) === dev.username
+          );
+          return (
+            <div key={dev.username} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3">
+              <img
+                src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
+                alt={dev.username}
+                className="w-10 h-10 rounded-lg ring-1 ring-gray-200"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-900 truncate">{dev.username}</div>
+                <div className="text-xs text-gray-400 truncate">{dev.primary_expertise || dev.analysis?.expertise?.primary || 'Developer'}</div>
+                <div className="text-[10px] text-teal-600 font-medium mt-0.5">{assigned.length} epic{assigned.length !== 1 ? 's' : ''} assigned</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LocalProjectView({ project }) {
+  const totalEpics = project.epics?.length || 0;
+  const totalStories = project.epics?.reduce((s, e) => s + (e.stories?.length || 0), 0) || 0;
+  const totalPoints = project.epics?.reduce((s, e) =>
+    s + (e.stories?.reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0) || 0;
+  const approvedEpics = project.epics?.filter(e => e.status === 'approved').length || 0;
+  const devCount = project.analyzedDevelopers?.length || 0;
+
+  const localHealth = useMemo(() => computeLocalHealth(project), [project]);
+
+  return (
+    <div className="space-y-6">
+      {/* Project Health + Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 md:col-span-1">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="w-5 h-5 text-teal-500" />
+            <h3 className="text-sm font-semibold text-gray-900">Project Readiness</h3>
+          </div>
+          <HealthBar score={localHealth.score} level={localHealth.level} />
+          <div className="mt-3 space-y-2">
+            {localHealth.factors.map((f, i) => (
+              <div key={i}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-gray-500">{f.name}</span>
+                  <span className="text-[11px] font-mono text-gray-700">{f.score}/{f.max}</span>
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">{f.detail}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3">
+          <StatCard icon={Layers} label="Epics" value={totalEpics} subtext={`${approvedEpics} approved`} color="text-purple-600" />
+          <StatCard icon={BookOpen} label="Stories" value={totalStories} color="text-blue-600" />
+          <StatCard icon={Target} label="Story Points" value={totalPoints} color="text-teal-600" />
+          <StatCard icon={Users} label="Developers" value={devCount} color="text-amber-600" />
+          <StatCard icon={GitBranch} label="Assignments" value={project.assignments?.length || 0} color="text-emerald-600" />
+          <StatCard icon={CheckCircle2} label="Approved" value={totalEpics > 0 ? `${Math.round((approvedEpics / totalEpics) * 100)}%` : '0%'} subtext="of epics" color="text-emerald-600" />
+        </div>
+      </div>
+
+      <DeveloperTiles project={project} />
+      <StoryPointsChart project={project} />
+      <EpicsStories project={project} />
+    </div>
+  );
+}
+
+function SyncedProjectView({ project }) {
+  const sprintId = project.jiraSprintId;
+  const { issues, isLoading: issuesLoading, mutate: mutateIssues } = useSprintIssues(sprintId);
+  const { burndown, isLoading: burndownLoading } = useBurndownData(sprintId);
+  const { sprint } = useSprintDetails(sprintId);
+  const { alerts } = useAlerts(issues);
+
+  const totalPoints = project.epics?.reduce((s, e) =>
+    s + (e.stories?.reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0) || 0;
+
+  const healthData = useMemo(() => {
+    // No Jira data yet — fall back to local project health
+    if ((!burndown || burndown.length === 0) && (!issues || issues.length === 0)) {
+      return computeLocalHealth(project);
+    }
+    return calculateHealthScore(burndown, issues, totalPoints, totalPoints);
+  }, [burndown, issues, totalPoints, project]);
+
+  // Derive stats from Jira issues
+  const jiraStats = useMemo(() => {
+    if (!issues) return { todo: 0, inProgress: 0, done: 0, total: 0, blockers: 0, bugs: 0, donePoints: 0, totalPoints: 0 };
+    let todo = 0, inProgress = 0, done = 0, blockers = 0, bugs = 0, donePoints = 0, tp = 0;
+    issues.forEach(i => {
+      const s = (i.status || '').toLowerCase();
+      const pts = i.storyPoints || 0;
+      tp += pts;
+      if (s.includes('done') || s.includes('closed') || s.includes('resolved')) { done++; donePoints += pts; }
+      else if (s.includes('progress') || s.includes('review')) inProgress++;
+      else todo++;
+      if (i.priority === 'Blocker' || i.priority === 'Critical') blockers++;
+      if ((i.issueType || '').toLowerCase() === 'bug') bugs++;
+    });
+    return { todo, inProgress, done, total: issues.length, blockers, bugs, donePoints, totalPoints: tp };
+  }, [issues]);
+
+  // Build burnup data from burndown
+  const burnupData = useMemo(() => {
+    if (!burndown || burndown.length === 0) return [];
+    const total = burndown[0]?.ideal || totalPoints;
+    return burndown.map((pt, i) => ({
+      day: pt.day || `Day ${i + 1}`,
+      total,
+      completed: total - (pt.actual ?? pt.ideal),
+      ideal: total - pt.ideal,
+    }));
+  }, [burndown, totalPoints]);
+
+  // Delayed tasks
+  const delayedTasks = useMemo(() => {
+    if (!issues) return [];
+    return issues.filter(i => {
+      const s = (i.status || '').toLowerCase();
+      const isBlocked = i.priority === 'Blocker' || i.priority === 'Critical' || (i.labels || []).includes('blocker');
+      const isStuck = !s.includes('done') && !s.includes('closed') && !s.includes('resolved');
+      return isBlocked && isStuck;
+    });
+  }, [issues]);
+
+  const completionPct = jiraStats.total > 0 ? Math.round((jiraStats.done / jiraStats.total) * 100) : 0;
+
+  // Velocity estimate
+  const velocityInfo = useMemo(() => {
+    if (!sprint || !jiraStats.total) return null;
+    const startDate = sprint.startDate ? new Date(sprint.startDate) : null;
+    const endDate = sprint.endDate ? new Date(sprint.endDate) : null;
+    if (!startDate) return null;
+    const now = new Date();
+    const elapsed = Math.max(1, Math.ceil((now - startDate) / (1000 * 60 * 60 * 24)));
+    const dailyRate = jiraStats.done / elapsed;
+    const remaining = jiraStats.total - jiraStats.done;
+    const daysToFinish = dailyRate > 0 ? Math.ceil(remaining / dailyRate) : null;
+    const sprintDays = endDate ? Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) : null;
+    return { dailyRate: dailyRate.toFixed(1), daysToFinish, sprintDays, elapsed };
+  }, [sprint, jiraStats]);
+
+  return (
+    <div className="space-y-6">
+      {/* Velocity Banner */}
+      {velocityInfo && velocityInfo.daysToFinish !== null && (
+        <div className="rounded-xl bg-gradient-to-r from-teal-50 to-blue-50 border border-teal-200 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Activity className="w-5 h-5 text-teal-600" />
+            <div>
+              <span className="text-sm font-medium text-gray-900">Sprint Velocity: </span>
+              <span className="text-sm text-gray-600">{velocityInfo.dailyRate} tasks/day</span>
+            </div>
+          </div>
+          <div className="text-sm text-gray-600">
+            {jiraStats.done === jiraStats.total ? (
+              <span className="text-emerald-600 font-semibold">All tasks complete!</span>
+            ) : (
+              <span>~{velocityInfo.daysToFinish} days to finish remaining {jiraStats.total - jiraStats.done} tasks</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Health Score + Key Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 md:col-span-1">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="w-5 h-5 text-teal-500" />
+            <h3 className="text-sm font-semibold text-gray-900">Sprint Health</h3>
+          </div>
+          {issuesLoading ? (
+            <div className="h-20 flex items-center justify-center text-gray-400 text-sm">Loading Jira data...</div>
+          ) : (
+            <>
+              <HealthBar score={healthData.score} level={healthData.level} />
+              {(!issues || issues.length === 0) && (!burndown || burndown.length === 0) && (
+                <div className="mt-2 text-[10px] text-amber-600 bg-amber-50 rounded-lg px-2 py-1">
+                  Showing local readiness — Jira sprint data not yet available
+                </div>
+              )}
+              <div className="mt-3 space-y-2">
+                {healthData.factors?.map((f, i) => (
+                  <div key={i}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-gray-500">{f.name}</span>
+                      <span className="text-[11px] font-mono text-gray-700">{Math.round(f.score)}/{f.max}</span>
+                    </div>
+                    {f.detail && <div className="text-[10px] text-gray-400 mt-0.5">{f.detail}</div>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard icon={Target} label="Issues" value={jiraStats.total} subtext={`${completionPct}% done`} color="text-teal-600" />
+          <StatCard icon={CheckCircle2} label="Completed" value={jiraStats.done} subtext={`${jiraStats.donePoints} pts`} color="text-emerald-600" />
+          <StatCard icon={Activity} label="In Progress" value={jiraStats.inProgress} color="text-blue-600" />
+          <StatCard icon={Clock} label="To Do" value={jiraStats.todo} color="text-gray-600" />
+          <StatCard icon={Flame} label="Blockers" value={jiraStats.blockers} color={jiraStats.blockers > 0 ? 'text-red-600' : 'text-gray-600'} />
+          <StatCard icon={Bug} label="Bugs" value={jiraStats.bugs} color={jiraStats.bugs > 0 ? 'text-amber-600' : 'text-gray-600'} />
+          <StatCard icon={TrendingUp} label="Points Done" value={jiraStats.donePoints} subtext={`of ${jiraStats.totalPoints}`} color="text-purple-600" />
+          <StatCard icon={Users} label="Developers" value={project.analyzedDevelopers?.length || 0} color="text-teal-600" />
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {alerts.length > 0 && (
+        <div className="space-y-2">
+          {alerts.map(alert => (
+            <div key={alert.id} className={`rounded-xl border p-3 flex items-start gap-3 ${
+              alert.severity === 'high' ? 'bg-red-50 border-red-200' :
+              alert.severity === 'medium' ? 'bg-amber-50 border-amber-200' :
+              'bg-blue-50 border-blue-200'
+            }`}>
+              <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${
+                alert.severity === 'high' ? 'text-red-500' : alert.severity === 'medium' ? 'text-amber-500' : 'text-blue-500'
+              }`} />
+              <div>
+                <div className={`text-sm font-medium ${
+                  alert.severity === 'high' ? 'text-red-700' : alert.severity === 'medium' ? 'text-amber-700' : 'text-blue-700'
+                }`}>{alert.title}</div>
+                {alert.message && <div className="text-xs text-gray-600 mt-0.5">{alert.message}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Burndown */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
+            <TrendingDown className="w-4 h-4 text-teal-500" /> Burndown Chart
+          </h3>
+          <p className="text-[11px] text-gray-400 mb-4">Tracks remaining work (story points) over time vs. the ideal pace. The gap between lines shows if the sprint is ahead or behind schedule.</p>
+          {burndownLoading ? (
+            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading...</div>
+          ) : burndown && burndown.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={burndown}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} label={{ value: 'Story Points Remaining', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#9ca3af' } }} />
+                <Tooltip {...chartTooltip} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Area type="monotone" dataKey="ideal" stroke="#9ca3af" fill="#f3f4f6" strokeDasharray="5 5" name="Ideal Remaining" />
+                <Area type="monotone" dataKey="actual" stroke="#0d9488" fill="#ccfbf1" name="Actual Remaining" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-48 flex flex-col items-center justify-center text-center px-4">
+              <TrendingDown className="w-8 h-8 text-gray-200 mb-2" />
+              <div className="text-sm text-gray-400">No burndown data yet</div>
+              <div className="text-[11px] text-gray-300 mt-1">This chart will show remaining story points declining day-by-day once the sprint is active in Jira</div>
+            </div>
+          )}
+        </div>
+
+        {/* Burnup */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-purple-500" /> Burnup Chart
+          </h3>
+          <p className="text-[11px] text-gray-400 mb-4">Tracks completed work rising toward total scope. Shows scope changes (expanding top line) and delivery progress (rising bottom line).</p>
+          {burndownLoading ? (
+            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading...</div>
+          ) : burnupData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={burnupData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} label={{ value: 'Story Points', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#9ca3af' } }} />
+                <Tooltip {...chartTooltip} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Area type="monotone" dataKey="total" stroke="#9ca3af" fill="#f3f4f6" name="Total Scope" />
+                <Area type="monotone" dataKey="ideal" stroke="#d1d5db" fill="none" strokeDasharray="5 5" name="Ideal Progress" />
+                <Area type="monotone" dataKey="completed" stroke="#7c3aed" fill="#ede9fe" name="Work Completed" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-48 flex flex-col items-center justify-center text-center px-4">
+              <TrendingUp className="w-8 h-8 text-gray-200 mb-2" />
+              <div className="text-sm text-gray-400">No burnup data yet</div>
+              <div className="text-[11px] text-gray-300 mt-1">This chart will show completed work rising toward total scope once the sprint is active in Jira</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Developer Workload */}
+      {project.analyzedDevelopers?.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Users className="w-4 h-4 text-teal-500" /> Developer Workload
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {project.analyzedDevelopers.map(dev => {
+              const devIssues = (issues || []).filter(i => i.assignee?.name === dev.username || i.assignee?.name === dev.login);
+              const devDone = devIssues.filter(i => {
+                const s = (i.status || '').toLowerCase();
+                return s.includes('done') || s.includes('closed') || s.includes('resolved');
+              }).length;
+              const devTotal = devIssues.length;
+              const pct = devTotal > 0 ? Math.round((devDone / devTotal) * 100) : 0;
+
+              return (
+                <div key={dev.username} className="rounded-xl border border-gray-200 p-3">
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <img
+                      src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
+                      alt={dev.username}
+                      className="w-8 h-8 rounded-lg ring-1 ring-gray-200"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-gray-900 truncate">{dev.username}</div>
+                      <div className="text-[10px] text-gray-400">{dev.primary_expertise || dev.analysis?.expertise?.primary || 'Dev'}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-gray-500">{devDone}/{devTotal} tasks</span>
+                    <span className="font-semibold text-gray-700">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Delayed / Blocked Tasks */}
+      {delayedTasks.length > 0 && (
+        <div className="bg-white rounded-xl border border-red-200 p-5">
+          <h3 className="text-sm font-semibold text-red-700 mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" /> Blocked / Critical Tasks ({delayedTasks.length})
+          </h3>
+          <div className="space-y-2">
+            {delayedTasks.map(task => (
+              <div key={task.key} className="flex items-center gap-3 rounded-lg bg-red-50 p-3">
+                <Flame className="w-4 h-4 text-red-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-gray-900">{task.summary}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{task.key} · {task.assignee?.name || 'Unassigned'} · {task.priority}</div>
+                </div>
+                <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${
+                  task.priority === 'Blocker' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                }`}>{task.priority}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Kanban — 2-way sync with Jira */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Columns3 className="w-4 h-4 text-blue-500" /> Sprint Kanban
+            <span className="text-[10px] font-normal text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">Live — drag to move</span>
+          </h3>
+          <div className="flex items-center gap-2">
+            <button onClick={() => mutateIssues()} className="text-xs text-gray-400 hover:text-teal-600 flex items-center gap-1 transition-colors">
+              <RefreshCw className="w-3 h-3" /> Sync
+            </button>
+            <Link
+              to={`/projects/${project.id}/kanban`}
+              className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1 font-medium"
+            >
+              Full Board <ExternalLink className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+        {issuesLoading ? (
+          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading sprint data...</div>
+        ) : issues && issues.length > 0 ? (
+          <InteractiveKanban issues={issues} mutateIssues={mutateIssues} />
+        ) : (
+          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No sprint issues found. Ensure Jira credentials are configured.</div>
+        )}
+      </div>
+
+      {/* Story Points + Epics & Stories */}
+      <StoryPointsChart project={project} />
+      <EpicsStories project={project} />
+    </div>
+  );
+}
 
 export default function ProjectDetailPage() {
   const { projectId } = useParams();
@@ -23,85 +918,111 @@ export default function ProjectDetailPage() {
   if (!isLoaded || !project) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-500 border-t-transparent" />
       </div>
     );
   }
 
   const cfg = statusConfig[project.status] || { label: project.status, color: 'bg-gray-100 text-gray-600' };
   const totalStories = project.epics?.reduce((s, e) => s + (e.stories?.length || 0), 0) || 0;
+  const totalPoints = project.epics?.reduce((s, e) =>
+    s + (e.stories?.reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0) || 0;
+
+  const deadline = project.deadline ? (() => {
+    const { value, unit } = project.deadline;
+    if (!value) return null;
+    const created = project.createdAt ? new Date(project.createdAt) : new Date();
+    const end = new Date(created);
+    const v = parseInt(value);
+    switch (unit) {
+      case 'hours': end.setHours(end.getHours() + v); break;
+      case 'days': end.setDate(end.getDate() + v); break;
+      case 'months': end.setMonth(end.getMonth() + v); break;
+      default: end.setDate(end.getDate() + v * 7); break;
+    }
+    const daysLeft = Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
+    return { endDate: end.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }), daysLeft };
+  })() : null;
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <Link to="/projects" className="mb-6 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Projects
+    <div className="mx-auto max-w-6xl px-6 py-8">
+      {/* Back link */}
+      <Link to="/projects" className="mb-6 inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors">
+        <ArrowLeft className="h-4 w-4" /> Back to Projects
       </Link>
 
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
-          </div>
-          <p className="mt-1 text-sm text-gray-500">
-            {project.epics?.length || 0} epics · {totalStories} stories
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {project.status === 'synced' && (
-            <Link
-              to={`/projects/${projectId}/kanban`}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-            >
-              <Columns3 className="h-4 w-4" />
-              Kanban Board
-            </Link>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {(project.epics || []).map((epic) => (
-          <div key={epic.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-            {/* Epic Header */}
-            <div className="border-b border-gray-100 bg-purple-50 px-5 py-4">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold uppercase text-purple-600">Epic</span>
-                {epic.jiraKey && (
-                  <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">{epic.jiraKey}</span>
-                )}
-              </div>
-              <h3 className="mt-1 font-semibold text-gray-900">{epic.title}</h3>
-              <p className="mt-0.5 text-sm text-gray-600">{epic.description}</p>
+      {/* Project Header */}
+      <div className="mb-8">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+              <span className={`rounded-full px-3 py-1 text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
+              {project.jiraProjectKey && (
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-mono font-medium text-blue-600">{project.jiraProjectKey}</span>
+              )}
             </div>
-
-            {/* Stories */}
-            <div className="divide-y divide-gray-50 px-5">
-              {(epic.stories || []).map((story) => (
-                <div key={story.id} className="py-3 pl-4">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-semibold uppercase text-blue-600">Story</span>
-                    {story.storyPoints && (
-                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
-                        {story.storyPoints} SP
-                      </span>
-                    )}
-                    {story.jiraKey && (
-                      <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">{story.jiraKey}</span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-sm font-medium text-gray-900">{story.title}</p>
-                  <p className="mt-0.5 text-xs text-gray-500">{story.description}</p>
-                </div>
-              ))}
-              {(!epic.stories || epic.stories.length === 0) && (
-                <p className="py-3 text-sm text-gray-400">No stories yet.</p>
+            {project.description && (
+              <p className="mt-2 text-sm text-gray-500 max-w-2xl">{project.description}</p>
+            )}
+            <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+              <span>{project.epics?.length || 0} epics · {totalStories} stories · {totalPoints} points</span>
+              {project.createdAt && (
+                <span className="flex items-center gap-1 text-gray-400">
+                  <Clock className="w-3.5 h-3.5" />
+                  Created {new Date(project.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              )}
+              {deadline && (
+                <span className={`flex items-center gap-1 ${deadline.daysLeft < 0 ? 'text-red-600' : deadline.daysLeft <= 3 ? 'text-amber-600' : ''}`}>
+                  <Calendar className="w-3.5 h-3.5" />
+                  {deadline.endDate} ({deadline.daysLeft < 0 ? `${Math.abs(deadline.daysLeft)}d overdue` : `${deadline.daysLeft}d left`})
+                </span>
               )}
             </div>
           </div>
-        ))}
+          <div className="flex items-center gap-2">
+            {!project.status || project.status === 'epics-ready' ? (
+              <Link
+                to={`/projects/${projectId}/verify`}
+                className="inline-flex items-center gap-2 rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-600 transition-all"
+              >
+                <ClipboardCheck className="h-4 w-4" /> Verify Epics
+              </Link>
+            ) : project.status === 'stories-ready' ? (
+              <Link
+                to={`/projects/${projectId}/assign`}
+                className="inline-flex items-center gap-2 rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-600 transition-all"
+              >
+                <UserPlus className="h-4 w-4" /> Assign Developers
+              </Link>
+            ) : null}
+            {project.status === 'synced' && (
+              <>
+                <Link
+                  to="/dashboard"
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all"
+                >
+                  <LayoutDashboard className="h-4 w-4" /> Dashboard
+                </Link>
+                <Link
+                  to={`/projects/${projectId}/kanban`}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all"
+                >
+                  <Columns3 className="h-4 w-4" /> Kanban
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Content: different view for synced vs non-synced */}
+      {project.status === 'synced' && project.jiraSprintId ? (
+        <SyncedProjectView project={project} />
+      ) : (
+        <LocalProjectView project={project} />
+      )}
     </div>
   );
 }
