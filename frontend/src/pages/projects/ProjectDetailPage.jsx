@@ -15,7 +15,7 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, AreaChart, Area
 } from 'recharts';
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, closestCorners } from '@dnd-kit/core';
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, pointerWithin, rectIntersection } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -150,7 +150,7 @@ function DroppableColumn({ id, items, colStyle }) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
-    <div ref={setNodeRef} className="min-h-[200px]">
+    <div ref={setNodeRef} className="min-h-[200px] flex flex-col">
       <div className={`rounded-lg px-3 py-2 mb-2 flex items-center justify-between ${colStyle.header}`}>
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${colStyle.dot}`} />
@@ -158,15 +158,15 @@ function DroppableColumn({ id, items, colStyle }) {
         </div>
         <span className="text-xs font-mono">{items.length}</span>
       </div>
-      <div className={`space-y-1.5 max-h-[400px] overflow-y-auto rounded-lg p-1 transition-colors ${
+      <div className={`space-y-1.5 max-h-[400px] overflow-y-auto rounded-lg p-1 transition-colors flex-1 ${
         isOver ? 'bg-teal-50 ring-2 ring-teal-200 ring-inset' : ''
       }`}>
         {items.map(issue => (
           <DraggableCard key={issue.key} issue={issue} column={id} />
         ))}
         {items.length === 0 && (
-          <div className={`text-center py-8 text-xs rounded-lg border-2 border-dashed ${
-            isOver ? 'border-teal-300 text-teal-500 bg-teal-50' : 'border-gray-200 text-gray-400'
+          <div className={`h-full min-h-[160px] flex items-center justify-center text-xs rounded-lg border-2 border-dashed transition-colors ${
+            isOver ? 'border-teal-300 text-teal-500 bg-teal-50/50' : 'border-gray-200 text-gray-400'
           }`}>
             {isOver ? 'Drop here' : 'No items'}
           </div>
@@ -304,7 +304,11 @@ function InteractiveKanban({ issues, mutateIssues }) {
       )}
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={(args) => {
+          const pointerCollisions = pointerWithin(args);
+          if (pointerCollisions.length > 0) return pointerCollisions;
+          return rectIntersection(args);
+        }}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >

@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useProjects } from '../../hooks/useProjects';
 import { useSprintIssues } from '../../hooks/useSprintData';
 import { ArrowLeft, Columns3, RefreshCw, GripVertical, Flame, Search, Filter, X } from 'lucide-react';
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, closestCorners } from '@dnd-kit/core';
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, pointerWithin, rectIntersection } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -103,9 +103,9 @@ function KanbanColumn({ id, items, config }) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
-    <div ref={setNodeRef} className={`rounded-xl border p-4 min-h-[400px] transition-colors ${
+    <div ref={setNodeRef} className={`rounded-xl border p-4 flex flex-col transition-colors ${
       isOver ? `${config.dropHighlight} ring-2 ring-inset` : config.header
-    }`}>
+    }`} style={{ minHeight: '400px' }}>
       <div className="mb-3 flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full ${config.dot}`} />
         <h2 className={`text-sm font-semibold ${config.textColor}`}>{id}</h2>
@@ -113,13 +113,13 @@ function KanbanColumn({ id, items, config }) {
           {items.length}
         </span>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2 flex-1">
         {items.map(issue => (
           <KanbanCard key={issue.key} issue={issue} column={id} />
         ))}
         {items.length === 0 && (
-          <div className={`py-12 text-center text-xs rounded-lg border-2 border-dashed ${
-            isOver ? 'border-teal-300 text-teal-500' : 'border-gray-200 text-gray-400'
+          <div className={`h-full min-h-[300px] flex items-center justify-center text-center text-xs rounded-lg border-2 border-dashed transition-colors ${
+            isOver ? 'border-teal-300 text-teal-500 bg-teal-50/50' : 'border-gray-200 text-gray-400'
           }`}>
             {isOver ? 'Drop here to move' : 'No items'}
           </div>
@@ -334,7 +334,13 @@ export default function ProjectKanbanPage() {
       ) : (
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCorners}
+          collisionDetection={(args) => {
+            // Try pointerWithin first (works for empty containers)
+            const pointerCollisions = pointerWithin(args);
+            if (pointerCollisions.length > 0) return pointerCollisions;
+            // Fallback to rectIntersection
+            return rectIntersection(args);
+          }}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
