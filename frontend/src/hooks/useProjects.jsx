@@ -1,15 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
 
 const STORAGE_KEY = 'focus-flow-projects';
 
 function loadProjects() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    console.log('[useProjects] loadProjects:', parsed.length, 'projects from localStorage');
-    return parsed;
-  } catch (e) {
-    console.error('[useProjects] loadProjects error:', e);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
     return [];
   }
 }
@@ -18,9 +15,10 @@ function saveProjects(projects) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
 }
 
-export function useProjects() {
+const ProjectsContext = createContext(null);
+
+export function ProjectsProvider({ children }) {
   const [projects, setProjects] = useState(() => loadProjects());
-  const [isLoaded] = useState(true);
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
 
@@ -29,23 +27,18 @@ export function useProjects() {
     saveProjects(updated);
   }, []);
 
-  // All mutating functions read from projectsRef or loadProjects()
-  // to avoid stale closure bugs (useProjects is not a singleton store)
-
   const addProject = useCallback(
     (project) => {
-      const current = loadProjects();
-      console.log('[useProjects] addProject called. Current projects in localStorage:', current.length, 'Adding:', project.id, project.name);
+      const current = projectsRef.current;
       const updated = [project, ...current.filter(p => p.id !== project.id)];
       persist(updated);
-      console.log('[useProjects] Saved. Total projects now:', updated.length);
     },
     [persist]
   );
 
   const getProject = useCallback(
-    (id) => projects.find((p) => p.id === id) || null,
-    [projects]
+    (id) => projectsRef.current.find((p) => p.id === id) || null,
+    []
   );
 
   const updateProject = useCallback(
@@ -173,8 +166,6 @@ export function useProjects() {
     [persist]
   );
 
-  // Sync Jira issue stats back into localStorage so ProjectsPage cards reflect live progress
-  // Uses ref to avoid depending on `projects` state (which would cause infinite re-render loops)
   const syncJiraProgress = useCallback(
     (projectId, jiraIssues) => {
       if (!jiraIssues || jiraIssues.length === 0) return;
@@ -192,12 +183,7 @@ export function useProjects() {
         return {
           ...p,
           jiraProgress: {
-            total: jiraIssues.length,
-            todo,
-            inProgress,
-            done,
-            donePoints,
-            totalPoints,
+            total: jiraIssues.length, todo, inProgress, done, donePoints, totalPoints,
             lastSynced: Date.now(),
           },
         };
@@ -207,9 +193,9 @@ export function useProjects() {
     [persist]
   );
 
-  return {
+  const value = {
     projects,
-    isLoaded,
+    isLoaded: true,
     addProject,
     getProject,
     updateProject,
@@ -224,4 +210,12 @@ export function useProjects() {
     deleteProject,
     syncJiraProgress,
   };
+
+  return <ProjectsContext.Provider value={value}>{children}</ProjectsContext.Provider>;
+}
+
+export function useProjects() {
+  const ctx = useContext(ProjectsContext);
+  if (!ctx) throw new Error('useProjects must be used within ProjectsProvider');
+  return ctx;
 }

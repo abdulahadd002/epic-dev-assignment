@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { WorkflowProvider, useWorkflow } from './context/WorkflowContext'
 import { AuthProvider } from './context/AuthContext'
+import { ProjectsProvider } from './hooks/useProjects'
 import { JiraProvider } from './context/JiraContext'
 import { AnimatePresence, motion } from 'framer-motion'
 import { createContext, useContext } from 'react'
@@ -104,6 +105,7 @@ function App() {
   return (
     <ThemeContext.Provider value={themeState}>
       <AuthProvider>
+        <ProjectsProvider>
         <BrowserRouter>
           <Routes>
             {/* Public */}
@@ -162,6 +164,7 @@ function App() {
             <Route path="*" element={<Navigate to="/projects" replace />} />
           </Routes>
         </BrowserRouter>
+        </ProjectsProvider>
       </AuthProvider>
     </ThemeContext.Provider>
   )
