@@ -44,7 +44,7 @@ const inputCls = "w-full rounded-xl border border-gray-200 bg-gray-50 text-gray-
 
 export default function Step3_DeveloperAnalysis() {
   const { developers, setDevelopers, nextStep, previousStep } = useWorkflow();
-  const { developers: rosterDevs } = useDevelopers();
+  const { developers: rosterDevs, addDevelopers: addToRoster } = useDevelopers();
 
   const [selectedRoster, setSelectedRoster] = useState(() => {
     const set = new Set();
@@ -163,6 +163,10 @@ export default function Step3_DeveloperAnalysis() {
       if (data.developers.length === 0 && alreadyInRoster.length === 0) {
         setError('No developers could be analyzed. Check usernames and try again.');
       } else {
+        // Persist to roster so they appear on future visits
+        if (data.developers.length > 0) {
+          addToRoster(data.developers);
+        }
         setFreshAnalyzed((prev) => {
           const seen = new Set(prev.map((d) => d.username));
           const added = data.developers.filter((d) => !seen.has(d.username));
