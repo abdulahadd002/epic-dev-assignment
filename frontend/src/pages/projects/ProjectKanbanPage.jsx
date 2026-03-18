@@ -147,11 +147,12 @@ export default function ProjectKanbanPage() {
     if (isLoaded && !project) navigate('/projects');
   }, [isLoaded, project, navigate]);
 
-  // Filter out epics — only show stories/tasks/subtasks on kanban
-  const storyIssues = useMemo(() =>
-    (issues || []).filter(i => (i.issueType || '').toLowerCase() !== 'epic'),
-    [issues]
-  );
+  // Filter out epics when stories exist — only show stories/tasks/subtasks on kanban
+  const storyIssues = useMemo(() => {
+    const all = issues || [];
+    const nonEpics = all.filter(i => (i.issueType || '').toLowerCase() !== 'epic');
+    return nonEpics.length > 0 ? nonEpics : all;
+  }, [issues]);
 
   // Merge SWR issues with pending optimistic moves
   const mergedIssues = useMemo(() => {

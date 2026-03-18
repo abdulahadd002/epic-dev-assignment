@@ -184,11 +184,12 @@ function InteractiveKanban({ issues, mutateIssues }) {
   const [activeIssue, setActiveIssue] = useState(null);
   const [syncingKey, setSyncingKey] = useState(null);
 
-  // Filter out epics — only show stories/tasks/subtasks on kanban
-  const storyIssues = useMemo(() =>
-    (issues || []).filter(i => (i.issueType || '').toLowerCase() !== 'epic'),
-    [issues]
-  );
+  // Filter out epics when stories exist — only show stories/tasks/subtasks on kanban
+  const storyIssues = useMemo(() => {
+    const all = issues || [];
+    const nonEpics = all.filter(i => (i.issueType || '').toLowerCase() !== 'epic');
+    return nonEpics.length > 0 ? nonEpics : all;
+  }, [issues]);
 
   // Merge SWR issues with any pending optimistic moves
   const mergedIssues = useMemo(() => {
