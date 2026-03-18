@@ -79,24 +79,37 @@ export async function getBurndownData(sprintId) {
   const end = new Date(sprint.endDate);
   const now = new Date();
   const totalDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
-  const totalPoints = issues.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
+
+  // Count story points — if custom fields are null, fall back to counting issues as 1 point each
+  let totalPoints = issues.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
+  const hasStoryPoints = totalPoints > 0;
+  if (!hasStoryPoints) {
+    // No story points set — use issue count as proxy (1 point per issue)
+    totalPoints = issues.filter(i => (i.issueType || '').toLowerCase() !== 'epic').length;
+  }
 
   // Determine when each issue was completed
-  // Use resolutionDate first, then statusCategoryChangeDate for "Done" items, then updated as fallback
+  // Use statusCategory === 'Done' to identify completed items
   const completionDates = issues
     .filter(i => i.statusCategory === 'Done')
     .map(i => ({
-      points: i.storyPoints || 0,
+      points: hasStoryPoints ? (i.storyPoints || 0) : ((i.issueType || '').toLowerCase() !== 'epic' ? 1 : 0),
       completedAt: new Date(i.resolutionDate || i.statusCategoryChangeDate || i.updated),
     }));
 
+  // Also count currently-done items without dates (for live "now" point)
+  const currentDonePoints = issues
+    .filter(i => i.statusCategory === 'Done')
+    .reduce((sum, i) => sum + (hasStoryPoints ? (i.storyPoints || 0) : ((i.issueType || '').toLowerCase() !== 'epic' ? 1 : 0)), 0);
+
   const points = [];
+
+  // Generate historical day-by-day points
   for (let d = 0; d <= totalDays; d++) {
     const date = new Date(start);
     date.setDate(start.getDate() + d);
     if (date > now) break;
 
-    // Set to end of day for comparison
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
@@ -113,6 +126,22 @@ export async function getBurndownData(sprintId) {
       actual: Math.max(0, totalPoints - completedPoints),
     });
   }
+
+  // Add a live "Now" point if we only have 1 historical point (same day as start)
+  // This ensures the chart always has at least 2 points to draw a line
+  if (points.length === 1) {
+    const elapsed = (now - start) / (1000 * 60 * 60 * 24);
+    const idealNow = totalPoints - (totalPoints / totalDays) * elapsed;
+    points.push({
+      day: 'Now',
+      date: now.toISOString().split('T')[0],
+      ideal: Math.max(0, Math.round(idealNow)),
+      actual: Math.max(0, totalPoints - currentDonePoints),
+    });
+  }
+
+  console.log(`[Burndown] Sprint ${sprintId}: ${issues.length} issues, ${totalPoints} points (${hasStoryPoints ? 'SP' : 'count'}), ${currentDonePoints} done, ${points.length} data points`);
+
   return points;
 }
 

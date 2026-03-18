@@ -61,7 +61,31 @@ router.get('/jira/sprint/:sprintId/issues', async (req, res) => {
 router.get('/jira/sprint/:sprintId/burndown', async (req, res) => {
   try {
     const data = await getBurndownData(req.params.sprintId);
-    res.json(data);
+    if (req.query.debug) {
+      const issues = await getSprintIssues(req.params.sprintId);
+      const sprint = await getSprintDetails(req.params.sprintId);
+      res.json({
+        burndown: data,
+        debug: {
+          sprintId: req.params.sprintId,
+          sprintState: sprint.state,
+          sprintStart: sprint.startDate,
+          sprintEnd: sprint.endDate,
+          issueCount: issues.length,
+          issues: issues.map(i => ({
+            key: i.key,
+            summary: i.summary,
+            status: i.status,
+            statusCategory: i.statusCategory,
+            storyPoints: i.storyPoints,
+            issueType: i.issueType,
+            resolutionDate: i.resolutionDate,
+          })),
+        },
+      });
+    } else {
+      res.json(data);
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
