@@ -4,11 +4,14 @@ import { useProjects } from '../hooks/useProjects';
 import {
   Users, Search, Trash2, Save, ChevronDown, ChevronRight,
   Briefcase, GitBranch, Award, AlertCircle, Plus, X, Loader2, UserPlus,
+  Circle, Clock, Palmtree,
 } from 'lucide-react';
+import { useNotifications } from '../hooks/useNotifications';
 
 export default function DevelopersPage() {
-  const { developers, addDevelopers, updateJiraUsername, removeDeveloper, isLoaded } = useDevelopers();
+  const { developers, addDevelopers, updateJiraUsername, updateAvailability, removeDeveloper, isLoaded } = useDevelopers();
   const { projects } = useProjects();
+  const { notify } = useNotifications();
   const [search, setSearch] = useState('');
   const [editingJira, setEditingJira] = useState({});
   const [expandedDev, setExpandedDev] = useState(null);
@@ -140,6 +143,7 @@ export default function DevelopersPage() {
       }));
 
       addDevelopers(enriched);
+      notify.success('Developers Added', `${enriched.length} developer${enriched.length > 1 ? 's' : ''} analyzed and added to roster`);
 
       // Reset form
       setNewDevInputs([{ github: '', jira: '' }]);
@@ -147,6 +151,7 @@ export default function DevelopersPage() {
       setAnalyzeProgress('');
     } catch (err) {
       setAnalyzeError(err.message);
+      notify.error('Analysis Failed', err.message);
     } finally {
       timers.forEach(clearTimeout);
       setAnalyzing(false);
@@ -361,6 +366,45 @@ export default function DevelopersPage() {
                         {saveStatus[dev.username] && (
                           <span className="text-xs text-green-600 font-medium">Saved!</span>
                         )}
+                      </div>
+
+                      {/* Availability */}
+                      <div className="mt-2 flex items-center gap-3">
+                        <label className="text-xs font-medium text-gray-400 whitespace-nowrap">Availability:</label>
+                        <div className="flex items-center gap-1">
+                          {[
+                            { value: 'available', label: 'Available', icon: Circle, color: 'text-emerald-500 bg-emerald-50 border-emerald-200' },
+                            { value: 'busy', label: 'Busy', icon: Clock, color: 'text-amber-500 bg-amber-50 border-amber-200' },
+                            { value: 'on-leave', label: 'On Leave', icon: Palmtree, color: 'text-red-500 bg-red-50 border-red-200' },
+                          ].map((opt) => {
+                            const isActive = (dev.availability?.status || 'available') === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                onClick={() => updateAvailability(dev.username, { status: opt.value })}
+                                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all ${
+                                  isActive ? opt.color : 'text-gray-400 bg-white border-gray-200 hover:bg-gray-50'
+                                }`}
+                              >
+                                <opt.icon className="h-3 w-3" />
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center gap-1.5 ml-2">
+                          <label className="text-xs font-medium text-gray-400">Capacity:</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="10"
+                            value={dev.availability?.capacity ?? 100}
+                            onChange={(e) => updateAvailability(dev.username, { capacity: parseInt(e.target.value) })}
+                            className="w-20 h-1.5 accent-blue-600"
+                          />
+                          <span className="text-[11px] font-medium text-gray-600 w-8">{dev.availability?.capacity ?? 100}%</span>
+                        </div>
                       </div>
 
                       {/* Stats Row */}

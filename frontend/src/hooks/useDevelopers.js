@@ -77,6 +77,17 @@ export function useDevelopers() {
     [developers, persist]
   );
 
+  const updateAvailability = useCallback(
+    (username, availability) => {
+      // availability: { status: 'available'|'busy'|'on-leave', capacity: 0-100 }
+      const updated = developers.map((d) =>
+        d.username === username ? { ...d, availability: { ...d.availability, ...availability } } : d
+      );
+      persist(updated);
+    },
+    [developers, persist]
+  );
+
   const removeDeveloper = useCallback(
     (username) => {
       persist(developers.filter((d) => d.username !== username));
@@ -95,6 +106,7 @@ export function useDevelopers() {
     addDeveloper,
     addDevelopers,
     updateJiraUsername,
+    updateAvailability,
     removeDeveloper,
     getDeveloper,
   };

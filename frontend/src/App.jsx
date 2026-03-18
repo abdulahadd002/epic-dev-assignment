@@ -2,9 +2,11 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { WorkflowProvider, useWorkflow } from './context/WorkflowContext'
 import { AuthProvider } from './context/AuthContext'
 import { ProjectsProvider } from './hooks/useProjects'
+import { NotificationsProvider } from './hooks/useNotifications'
 import { AnimatePresence, motion } from 'framer-motion'
 import { createContext, useContext } from 'react'
 import { useTheme } from './hooks/useTheme'
+import NotificationToast from './components/shared/NotificationToast'
 
 // Layout & guard
 import Header from './components/layout/Header'
@@ -100,7 +102,9 @@ function App() {
     <ThemeContext.Provider value={themeState}>
       <AuthProvider>
         <ProjectsProvider>
+        <NotificationsProvider>
         <BrowserRouter>
+          <NotificationToast />
           <Routes>
             {/* Public */}
             <Route path="/login" element={<Login />} />
@@ -149,6 +153,7 @@ function App() {
             <Route path="*" element={<Navigate to="/projects" replace />} />
           </Routes>
         </BrowserRouter>
+        </NotificationsProvider>
         </ProjectsProvider>
       </AuthProvider>
     </ThemeContext.Provider>

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useProjects } from '../../hooks/useProjects';
 import { useDevelopers } from '../../hooks/useDevelopers';
 import { Clock, Calendar, Upload, Loader2, CheckCircle2, AlertCircle, Pencil, Zap, Hash } from 'lucide-react';
+import { useNotifications } from '../../hooks/useNotifications';
 
 import ProgressStepper from '../../components/shared/ProgressStepper';
 import Step1_EpicGeneration from '../../components/steps/Step1_EpicGeneration';
@@ -72,6 +73,7 @@ function WizardContent() {
   const { currentStep, generatedEpics, developers, assignments, projectDescription, reset } = useWorkflow();
   const { addProject } = useProjects();
   const { addDevelopers, developers: rosterDevs } = useDevelopers();
+  const { notify } = useNotifications();
   const navigate = useNavigate();
 
   const [projectName, setProjectName] = useState('');
@@ -232,11 +234,13 @@ function WizardContent() {
       });
 
       setSyncStatus('success');
+      notify.success('Jira Sync Complete', `${name} synced with ${data.totalIssues || 'all'} issues`);
       reset();
       setTimeout(() => navigate(`/projects/${projectId}`), 1500);
     } catch (err) {
       setSyncStatus('error');
       setSyncError(err.message);
+      notify.error('Sync Failed', err.message);
     } finally {
       timers.forEach(clearTimeout);
       setSyncProgress('');
@@ -263,6 +267,7 @@ function WizardContent() {
       analyzedDevelopers: developers,
     });
 
+    notify.success('Project Saved', `${name} saved locally`);
     reset();
     navigate(`/projects/${projectId}`);
   };

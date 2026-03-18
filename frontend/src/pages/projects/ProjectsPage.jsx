@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useProjects } from '../../hooks/useProjects';
-import { PlusCircle, FolderKanban, Trash2, Clock, Users, BookOpen, CheckCircle2, AlertTriangle, ArrowRight, Zap, Calendar } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { useTemplates } from '../../hooks/useTemplates';
+import { PlusCircle, FolderKanban, Trash2, Clock, Users, BookOpen, CheckCircle2, AlertTriangle, ArrowRight, Zap, Calendar, Copy, FileStack, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const statusConfig = {
   'epics-ready': { label: 'Epics Ready', color: 'bg-blue-100 text-blue-700', icon: BookOpen, step: 1 },
@@ -110,7 +112,38 @@ const cardVariants = {
 };
 
 export default function ProjectsPage() {
-  const { projects, isLoaded, deleteProject } = useProjects();
+  const { projects, isLoaded, deleteProject, addProject } = useProjects();
+  const { templates, saveAsTemplate, deleteTemplate } = useTemplates();
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateSaved, setTemplateSaved] = useState(null);
+
+  const handleSaveAsTemplate = (e, project) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const tpl = saveAsTemplate(project);
+    setTemplateSaved(project.id);
+    setTimeout(() => setTemplateSaved(null), 2000);
+  };
+
+  const handleCreateFromTemplate = (template) => {
+    const projectId = Date.now().toString();
+    addProject({
+      id: projectId,
+      name: `${template.name} (Copy)`,
+      rawText: template.description,
+      createdAt: new Date().toISOString(),
+      status: 'epics-ready',
+      epics: template.epics.map((e) => ({
+        ...e,
+        id: `${e.id}-${Date.now()}`,
+        stories: e.stories.map((s) => ({ ...s, id: `${s.id}-${Date.now()}` })),
+      })),
+      assignments: [],
+      analyzedDevelopers: [],
+      fromTemplate: template.id,
+    });
+    setShowTemplates(false);
+  };
 
   if (!isLoaded) {
     return (
@@ -127,14 +160,76 @@ export default function ProjectsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
           <p className="mt-1 text-sm text-gray-500">Track and manage your AI-generated project workflows</p>
         </div>
-        <Link
-          to="/projects/new"
-          className="inline-flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 transition-all"
-        >
-          <PlusCircle className="h-4 w-4" />
-          New Project
-        </Link>
+        <div className="flex items-center gap-2">
+          {templates.length > 0 && (
+            <button
+              onClick={() => setShowTemplates(!showTemplates)}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all"
+            >
+              <FileStack className="h-4 w-4" />
+              Templates ({templates.length})
+            </button>
+          )}
+          <Link
+            to="/projects/new"
+            className="inline-flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 transition-all"
+          >
+            <PlusCircle className="h-4 w-4" />
+            New Project
+          </Link>
+        </div>
       </div>
+
+      {/* Templates Panel */}
+      <AnimatePresence>
+        {showTemplates && templates.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-6 overflow-hidden"
+          >
+            <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <FileStack className="h-4 w-4 text-blue-500" />
+                  Project Templates
+                </h3>
+                <button onClick={() => setShowTemplates(false)} className="text-gray-400 hover:text-gray-600">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {templates.map((tpl) => (
+                  <div key={tpl.id} className="rounded-lg border border-gray-200 bg-white p-4 hover:border-blue-300 transition-colors">
+                    <h4 className="text-sm font-semibold text-gray-900 truncate">{tpl.name}</h4>
+                    <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400">
+                      <span>{tpl.epicCount} epics</span>
+                      <span>{tpl.storyCount} stories</span>
+                      <span>{tpl.totalPoints} SP</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={() => handleCreateFromTemplate(tpl)}
+                        className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                      >
+                        <PlusCircle className="h-3 w-3" />
+                        Use Template
+                      </button>
+                      <button
+                        onClick={() => deleteTemplate(tpl.id)}
+                        className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {projects.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white py-20 text-center">
@@ -208,6 +303,17 @@ export default function ProjectsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 ml-3">
+                        <button
+                          onClick={(e) => handleSaveAsTemplate(e, project)}
+                          className={`rounded-lg p-2 transition-colors ${
+                            templateSaved === project.id
+                              ? 'text-emerald-500 bg-emerald-50'
+                              : 'text-gray-300 hover:bg-blue-50 hover:text-blue-500'
+                          }`}
+                          title={templateSaved === project.id ? 'Template saved!' : 'Save as template'}
+                        >
+                          {templateSaved === project.id ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        </button>
                         <button
                           onClick={(e) => {
                             e.preventDefault();

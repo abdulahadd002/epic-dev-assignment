@@ -18,6 +18,8 @@ import {
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, pointerWithin, rectIntersection } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import StoryDependencies from '../../components/projects/StoryDependencies';
+import SprintRetro from '../../components/projects/SprintRetro';
 
 const statusConfig = {
   'epics-ready': { label: 'Epics Ready', color: 'bg-blue-100 text-blue-700' },
@@ -533,6 +535,7 @@ function DeveloperTiles({ project }) {
 }
 
 function LocalProjectView({ project }) {
+  const { updateProject } = useProjects();
   const totalEpics = project.epics?.length || 0;
   const totalStories = project.epics?.reduce((s, e) => s + (e.stories?.length || 0), 0) || 0;
   const totalPoints = project.epics?.reduce((s, e) =>
@@ -577,6 +580,10 @@ function LocalProjectView({ project }) {
 
       <DeveloperTiles project={project} />
       <StoryPointsChart project={project} />
+      <StoryDependencies
+        project={project}
+        onUpdateDependencies={(deps) => updateProject(project.id, { dependencies: deps })}
+      />
       <EpicsStories project={project} />
     </div>
   );
@@ -588,7 +595,7 @@ function SyncedProjectView({ project }) {
   const { burndown, isLoading: burndownLoading } = useBurndownData(sprintId);
   const { sprint } = useSprintDetails(sprintId);
   const { alerts } = useAlerts(issues);
-  const { syncJiraProgress } = useProjects();
+  const { syncJiraProgress, updateProject } = useProjects();
 
   // Sync Jira progress into localStorage whenever issues update
   useEffect(() => {
@@ -912,7 +919,14 @@ function SyncedProjectView({ project }) {
 
       {/* Story Points + Epics & Stories */}
       <StoryPointsChart project={project} />
+      <StoryDependencies
+        project={project}
+        onUpdateDependencies={(deps) => updateProject(project.id, { dependencies: deps })}
+      />
       <EpicsStories project={project} />
+
+      {/* Sprint Retrospective */}
+      <SprintRetro projectId={project.id} />
     </div>
   );
 }

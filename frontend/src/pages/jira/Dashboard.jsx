@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   FolderOpen, Users, BookOpen, Layers, CheckCircle2, Clock, AlertTriangle,
-  TrendingUp, BarChart3, ExternalLink, GitBranch, Target, Zap, Activity
+  TrendingUp, BarChart3, ExternalLink, GitBranch, Target, Zap, Activity, Gauge
 } from 'lucide-react';
 
 function StatCard({ icon: Icon, label, value, sub, color = 'blue' }) {
@@ -166,6 +166,56 @@ export default function Dashboard() {
     };
   }, [projects, developers]);
 
+  // Estimation calibration data
+  const calibration = useMemo(() => {
+    const perProject = [];
+    for (const p of projects) {
+      if (!p.epics?.length) continue;
+      const estimatedPoints = p.epics.reduce((s, e) =>
+        s + (e.stories?.reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0);
+      const estimatedStories = p.epics.reduce((s, e) => s + (e.stories?.length || 0), 0);
+      const jp = p.jiraProgress;
+      const donePoints = jp?.donePoints || 0;
+      const doneStories = jp?.done || 0;
+      const completionRate = estimatedStories > 0 ? Math.round((doneStories / estimatedStories) * 100) : 0;
+      const pointAccuracy = estimatedPoints > 0 && donePoints > 0
+        ? Math.round((donePoints / estimatedPoints) * 100) : null;
+      perProject.push({
+        name: p.name,
+        id: p.id,
+        estimatedPoints,
+        estimatedStories,
+        donePoints,
+        doneStories,
+        completionRate,
+        pointAccuracy,
+        status: p.status,
+      });
+    }
+
+    // Average accuracy across synced projects
+    const synced = perProject.filter((p) => p.pointAccuracy !== null);
+    const avgAccuracy = synced.length > 0
+      ? Math.round(synced.reduce((s, p) => s + p.pointAccuracy, 0) / synced.length)
+      : null;
+
+    // Story point distribution
+    const spBuckets = { '1-2': 0, '3-5': 0, '8': 0, '13+': 0 };
+    for (const p of projects) {
+      for (const e of (p.epics || [])) {
+        for (const s of (e.stories || [])) {
+          const sp = s.storyPoints || 0;
+          if (sp <= 2) spBuckets['1-2']++;
+          else if (sp <= 5) spBuckets['3-5']++;
+          else if (sp <= 8) spBuckets['8']++;
+          else spBuckets['13+']++;
+        }
+      }
+    }
+
+    return { perProject, avgAccuracy, spBuckets };
+  }, [projects]);
+
   const recentProjects = useMemo(() =>
     [...projects].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 6),
     [projects]
@@ -303,6 +353,86 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Estimation Calibration */}
+      {calibration.perProject.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Accuracy Overview */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-indigo-500" />
+              Estimation Calibration
+            </h2>
+            {calibration.avgAccuracy !== null && (
+              <div className="mb-4 flex items-center gap-4">
+                <div className={`text-3xl font-bold ${
+                  calibration.avgAccuracy >= 80 ? 'text-emerald-600' :
+                  calibration.avgAccuracy >= 50 ? 'text-amber-600' : 'text-red-600'
+                }`}>
+                  {calibration.avgAccuracy}%
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Average Accuracy</p>
+                  <p className="text-[10px] text-gray-400">Completed points vs estimated across synced projects</p>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              {calibration.perProject.slice(0, 5).map((p) => (
+                <Link key={p.id} to={`/projects/${p.id}`} className="block">
+                  <div className="flex items-center gap-2 rounded-lg hover:bg-gray-50 px-2 py-1.5 transition-colors">
+                    <span className="text-xs font-medium text-gray-700 truncate flex-1">{p.name}</span>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">{p.doneStories}/{p.estimatedStories} stories</span>
+                    <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0">
+                      <div
+                        className={`h-full rounded-full ${
+                          p.completionRate >= 80 ? 'bg-emerald-500' :
+                          p.completionRate >= 40 ? 'bg-amber-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${Math.min(p.completionRate, 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-gray-500 w-8 text-right flex-shrink-0">{p.completionRate}%</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* Story Point Distribution */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-teal-500" />
+              Story Point Distribution
+            </h2>
+            <div className="space-y-3">
+              {Object.entries(calibration.spBuckets).map(([label, count]) => {
+                const maxCount = Math.max(...Object.values(calibration.spBuckets), 1);
+                const pct = Math.round((count / maxCount) * 100);
+                return (
+                  <div key={label}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-gray-600">{label} points</span>
+                      <span className="text-xs font-mono text-gray-500">{count} stories</span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-teal-400 to-indigo-500 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.5 }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-[10px] text-gray-400">
+              Distribution of story point estimates across all {stats.totalStories} stories
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Jira-synced projects */}
       {syncedProjects.length > 0 && (
