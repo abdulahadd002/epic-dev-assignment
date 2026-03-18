@@ -772,8 +772,8 @@ function SyncedProjectView({ project }) {
                 <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} label={{ value: 'Story Points Remaining', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#9ca3af' } }} />
                 <Tooltip {...chartTooltip} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="ideal" stroke="#9ca3af" fill="#f3f4f6" strokeDasharray="5 5" name="Ideal Remaining" />
-                <Area type="monotone" dataKey="actual" stroke="#0d9488" fill="#ccfbf1" name="Actual Remaining" />
+                <Area type="monotone" dataKey="ideal" stroke="#9ca3af" fill="#f3f4f6" strokeDasharray="5 5" name="Ideal Remaining" dot={{ r: 3, fill: '#9ca3af' }} />
+                <Area type="monotone" dataKey="actual" stroke="#0d9488" fill="#ccfbf1" name="Actual Remaining" dot={{ r: 3, fill: '#0d9488' }} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -801,9 +801,9 @@ function SyncedProjectView({ project }) {
                 <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} label={{ value: 'Story Points', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#9ca3af' } }} />
                 <Tooltip {...chartTooltip} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="total" stroke="#9ca3af" fill="#f3f4f6" name="Total Scope" />
-                <Area type="monotone" dataKey="ideal" stroke="#d1d5db" fill="none" strokeDasharray="5 5" name="Ideal Progress" />
-                <Area type="monotone" dataKey="completed" stroke="#7c3aed" fill="#ede9fe" name="Work Completed" />
+                <Area type="monotone" dataKey="total" stroke="#9ca3af" fill="#f3f4f6" name="Total Scope" dot={{ r: 3, fill: '#9ca3af' }} />
+                <Area type="monotone" dataKey="ideal" stroke="#d1d5db" fill="none" strokeDasharray="5 5" name="Ideal Progress" dot={{ r: 3, fill: '#d1d5db' }} />
+                <Area type="monotone" dataKey="completed" stroke="#7c3aed" fill="#ede9fe" name="Work Completed" dot={{ r: 3, fill: '#7c3aed' }} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (

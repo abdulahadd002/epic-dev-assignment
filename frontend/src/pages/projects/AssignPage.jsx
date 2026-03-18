@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useProjects } from '../../hooks/useProjects';
 import { useDevelopers } from '../../hooks/useDevelopers';
 import { ArrowLeft, Plus, Minus, Loader2, UserCheck, RefreshCw, Clock, Calendar, Zap, ChevronDown, ChevronRight, Users, Check, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import SyncButton from '../../components/projects/SyncButton';
 
 function suggestSprintCount(deadline, totalStories, totalPoints) {
@@ -42,6 +43,7 @@ export default function AssignPage() {
   const [sprintCount, setSprintCount] = useState(project?.sprintCount || 1);
   const [expandedEpics, setExpandedEpics] = useState({});
   const [showAddNew, setShowAddNew] = useState(false);
+  const [reassigningStoryId, setReassigningStoryId] = useState(null);
 
   useEffect(() => {
     if (isLoaded && !project) navigate('/projects');
@@ -169,6 +171,7 @@ export default function AssignPage() {
   const handleReassign = async (storyId, newDeveloperLogin) => {
     try {
       if (!newDeveloperLogin) return;
+      setReassigningStoryId(storyId);
       const res = await fetch('/api/reassign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -184,6 +187,8 @@ export default function AssignPage() {
       );
     } catch (err) {
       setError(err.message);
+    } finally {
+      setReassigningStoryId(null);
     }
   };
 
@@ -266,7 +271,7 @@ export default function AssignPage() {
                 const uname = dev.username || dev.login;
                 const isSelected = selectedUsernames.has(uname);
                 return (
-                  <button
+                  <motion.button
                     key={uname}
                     onClick={() => toggleRosterDev(dev)}
                     className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-all ${
@@ -274,6 +279,8 @@ export default function AssignPage() {
                         ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
                         : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                     }`}
+                    whileTap={{ scale: 0.97 }}
+                    layout
                   >
                     <div className="relative flex-shrink-0">
                       {dev.avatar_url || dev.avatar ? (
@@ -297,7 +304,7 @@ export default function AssignPage() {
                       <p className="text-sm font-medium text-gray-900 truncate">{uname}</p>
                       <p className="text-[10px] text-gray-500 truncate">{dev.primary_expertise || 'Full Stack'} · {dev.experience_level || 'Unknown'}</p>
                     </div>
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>
@@ -343,14 +350,16 @@ export default function AssignPage() {
                   Add Username
                 </button>
               )}
-              <button
+              <motion.button
                 onClick={handleAnalyze}
                 disabled={isAnalyzing}
-                className="ml-auto inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-300"
+                className="ml-auto inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
               >
                 {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
                 {isAnalyzing ? 'Analyzing...' : 'Analyze & Add'}
-              </button>
+              </motion.button>
             </div>
           </div>
         ) : (
@@ -374,7 +383,14 @@ export default function AssignPage() {
             {selectedDevs.map((dev) => {
               const uname = dev.login || dev.username;
               return (
-                <div key={uname} className="rounded-xl border border-gray-200 bg-white p-4 relative group">
+                <motion.div
+                  key={uname}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                  className="rounded-xl border border-gray-200 bg-white p-4 relative group"
+                >
                   <button
                     onClick={() => toggleRosterDev(dev)}
                     className="absolute top-2 right-2 rounded-full p-1 text-gray-300 hover:bg-red-50 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -403,19 +419,21 @@ export default function AssignPage() {
                       ))}
                     </div>
                   )}
-                </div>
+                </motion.div>
               );
             })}
           </div>
 
-          <button
+          <motion.button
             onClick={handleAutoAssign}
             disabled={isAssigning || approvedEpics.length === 0}
-            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:bg-gray-300"
+            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:bg-gray-300 transition-colors"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
           >
             {isAssigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {isAssigning ? 'Auto-Assigning Stories...' : 'Auto-Assign Stories'}
-          </button>
+          </motion.button>
         </div>
       )}
 
@@ -433,47 +451,76 @@ export default function AssignPage() {
                   onClick={() => toggleEpic(group.epic_id)}
                   className="w-full flex items-center gap-2 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
                 >
-                  {expandedEpics[group.epic_id] ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                  <motion.div animate={{ rotate: expandedEpics[group.epic_id] ? 90 : 0 }} transition={{ duration: 0.2 }}>
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                  </motion.div>
                   <span className="font-medium text-gray-800 text-sm">{group.epic_title}</span>
                   <span className="ml-auto text-xs text-gray-500">{group.stories.length} stories</span>
                 </button>
+                <AnimatePresence>
                 {expandedEpics[group.epic_id] && (
-                  <div className="divide-y divide-gray-50">
-                    {group.stories.map((a) => {
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                    className="overflow-hidden divide-y divide-gray-50"
+                  >
+                    {group.stories.map((a, idx) => {
                       const assignedDev = selectedDevs.find(d => (d.login || d.username) === a.assigned_developer);
+                      const isReassigning = reassigningStoryId === a.story_id;
                       return (
-                        <div key={a.story_id} className="flex items-center gap-3 px-6 py-2.5 text-sm">
+                        <motion.div
+                          key={a.story_id}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: idx * 0.03, duration: 0.2 }}
+                          className={`flex items-center gap-3 px-6 py-2.5 text-sm transition-colors ${isReassigning ? 'bg-blue-50' : ''}`}
+                        >
                           <div className="flex-1 min-w-0">
                             <p className="text-gray-800 truncate">{a.story_title}</p>
                             <span className="text-[10px] text-gray-400">{a.story_points} SP</span>
                           </div>
                           <div className="flex items-center gap-2 min-w-[120px]">
-                            {(assignedDev?.avatar_url || assignedDev?.avatar) && (
-                              <img src={assignedDev?.avatar_url || assignedDev?.avatar} className="h-5 w-5 rounded-full" alt="" />
+                            {isReassigning ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                            ) : (
+                              <>
+                                {(assignedDev?.avatar_url || assignedDev?.avatar) && (
+                                  <img src={assignedDev?.avatar_url || assignedDev?.avatar} className="h-5 w-5 rounded-full" alt="" />
+                                )}
+                                <span className="text-gray-700 text-xs font-medium">{a.assigned_developer}</span>
+                              </>
                             )}
-                            <span className="text-gray-700 text-xs font-medium">{a.assigned_developer}</span>
                           </div>
                           <span className="text-xs text-gray-500 w-12 text-right">{a.score != null ? `${a.score}%` : '-'}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium w-16 text-center ${
-                            a.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                            a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>{a.confidence}</span>
+                          <motion.span
+                            key={a.confidence}
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-medium w-16 text-center ${
+                              a.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                              a.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }`}
+                          >{a.confidence}</motion.span>
                           <select
                             onChange={(e) => handleReassign(a.story_id, e.target.value)}
-                            className="rounded border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-500 focus:outline-none w-28"
+                            className="rounded border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-500 focus:outline-none w-28 transition-colors hover:border-blue-400"
                             defaultValue=""
+                            disabled={isReassigning}
                           >
                             <option value="" disabled>Reassign...</option>
                             {selectedDevs.map((d) => (
                               <option key={d.login || d.username} value={d.login || d.username}>{d.login || d.username}</option>
                             ))}
                           </select>
-                        </div>
+                        </motion.div>
                       );
                     })}
-                  </div>
+                  </motion.div>
                 )}
+                </AnimatePresence>
               </div>
             ))}
           </div>
