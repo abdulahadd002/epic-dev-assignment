@@ -36,6 +36,14 @@ function transformEpicsForProject(generatedEpics) {
           description: s.story_description || '',
           acceptanceCriteria: s.acceptance_criteria || '',
           storyPoints: parseInt(s.story_points) || 5,
+          testCases: (s.test_cases || []).map((tc) => ({
+            id: tc.test_case_id || '',
+            description: tc.test_case_description || '',
+            preconditions: tc.input_preconditions || '',
+            testData: tc.input_test_data || '',
+            userAction: tc.input_user_action || '',
+            expectedResults: tc.expected_results || [],
+          })),
           status: 'approved',
         })),
     }));

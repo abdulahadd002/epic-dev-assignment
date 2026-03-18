@@ -183,7 +183,56 @@ export async function createEpic(projectKey, title, description) {
   return res.json();
 }
 
-export async function createStory(projectKey, title, description, acceptanceCriteria, epicKey) {
+export async function createStory(projectKey, title, description, acceptanceCriteria, epicKey, testCases) {
+  // Build ADF content blocks for the issue description
+  const contentBlocks = [];
+
+  if (description) {
+    contentBlocks.push({ type: 'paragraph', content: [{ type: 'text', text: description }] });
+  }
+
+  if (acceptanceCriteria) {
+    contentBlocks.push(
+      { type: 'paragraph', content: [{ type: 'text', text: '\nAcceptance Criteria:', marks: [{ type: 'strong' }] }] },
+      { type: 'paragraph', content: [{ type: 'text', text: acceptanceCriteria }] }
+    );
+  }
+
+  if (testCases && testCases.length > 0) {
+    for (const tc of testCases) {
+      const tcParts = [];
+      if (tc.id) tcParts.push(`[${tc.id}]`);
+      tcParts.push(tc.description || 'Test Case');
+      contentBlocks.push(
+        { type: 'paragraph', content: [{ type: 'text', text: `\nTest Case: ${tcParts.join(' ')}`, marks: [{ type: 'strong' }] }] }
+      );
+      if (tc.preconditions) {
+        contentBlocks.push({ type: 'paragraph', content: [{ type: 'text', text: `Preconditions: ${tc.preconditions}` }] });
+      }
+      if (tc.testData) {
+        contentBlocks.push({ type: 'paragraph', content: [{ type: 'text', text: `Test Data: ${tc.testData}` }] });
+      }
+      if (tc.userAction) {
+        contentBlocks.push({ type: 'paragraph', content: [{ type: 'text', text: `Steps: ${tc.userAction}` }] });
+      }
+      if (tc.expectedResults && tc.expectedResults.length > 0) {
+        contentBlocks.push({ type: 'paragraph', content: [{ type: 'text', text: 'Expected Results:' }] });
+        contentBlocks.push({
+          type: 'orderedList',
+          content: tc.expectedResults.map((r) => ({
+            type: 'listItem',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: r }] }],
+          })),
+        });
+      }
+    }
+  }
+
+  // Fallback: ensure at least one content block
+  if (contentBlocks.length === 0) {
+    contentBlocks.push({ type: 'paragraph', content: [{ type: 'text', text: title }] });
+  }
+
   const body = {
     fields: {
       project: { key: projectKey },
@@ -191,14 +240,7 @@ export async function createStory(projectKey, title, description, acceptanceCrit
       description: {
         type: 'doc',
         version: 1,
-        content: [
-          { type: 'paragraph', content: [{ type: 'text', text: description }] },
-          ...(acceptanceCriteria
-            ? [
-                { type: 'paragraph', content: [{ type: 'text', text: `Acceptance Criteria: ${acceptanceCriteria}` }] },
-              ]
-            : []),
-        ],
+        content: contentBlocks,
       },
       issuetype: { name: 'Story' },
     },

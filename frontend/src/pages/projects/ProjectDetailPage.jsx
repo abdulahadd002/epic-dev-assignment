@@ -393,6 +393,103 @@ function computeLocalHealth(project) {
   return { score: finalScore, level, factors };
 }
 
+function StoryDetail({ story }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasAC = !!story.acceptanceCriteria;
+  const hasTC = story.testCases?.length > 0;
+  const expandable = hasAC || hasTC;
+
+  return (
+    <div className="rounded-lg bg-gray-50 overflow-hidden">
+      <div
+        className={`flex items-center gap-3 py-2 px-3 ${expandable ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''}`}
+        onClick={() => expandable && setExpanded(!expanded)}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-medium text-gray-800">{story.title}</div>
+          {story.description && <div className="text-[11px] text-gray-400 truncate mt-0.5">{story.description}</div>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {hasAC && <ClipboardCheck className="w-3 h-3 text-emerald-400" title="Has acceptance criteria" />}
+          {hasTC && <FileText className="w-3 h-3 text-blue-400" title="Has test cases" />}
+          {story.storyPoints > 0 && <span className="text-[10px] font-mono bg-white rounded border border-gray-200 px-1.5 py-0.5 text-gray-500">{story.storyPoints} SP</span>}
+          {story.jiraKey && <span className="text-[10px] font-mono text-blue-600">{story.jiraKey}</span>}
+          {expandable && (
+            <motion.div animate={{ rotate: expanded ? 180 : 0 }}>
+              <ChevronDown className="w-3 h-3 text-gray-400" />
+            </motion.div>
+          )}
+        </div>
+      </div>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="px-3 pb-3 space-y-3">
+              {/* Acceptance Criteria */}
+              {hasAC && (
+                <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 p-3">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <ClipboardCheck className="w-3 h-3 text-emerald-600" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Acceptance Criteria</span>
+                  </div>
+                  <p className="text-xs text-gray-700 whitespace-pre-line">{story.acceptanceCriteria}</p>
+                </div>
+              )}
+
+              {/* Test Cases */}
+              {hasTC && story.testCases.map((tc, i) => (
+                <div key={i} className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="w-3 h-3 text-blue-600" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Test Case</span>
+                    {tc.id && <span className="text-[10px] font-mono bg-blue-100 text-blue-600 rounded px-1.5 py-0.5">{tc.id}</span>}
+                  </div>
+                  {tc.description && <p className="text-xs text-gray-700 mb-2">{tc.description}</p>}
+                  <div className="space-y-2">
+                    {tc.preconditions && (
+                      <div>
+                        <span className="text-[10px] font-semibold text-gray-500 uppercase">Preconditions</span>
+                        <p className="text-xs text-gray-600 mt-0.5">{tc.preconditions}</p>
+                      </div>
+                    )}
+                    {tc.testData && (
+                      <div>
+                        <span className="text-[10px] font-semibold text-gray-500 uppercase">Test Data</span>
+                        <p className="text-xs text-gray-600 mt-0.5">{tc.testData}</p>
+                      </div>
+                    )}
+                    {tc.userAction && (
+                      <div>
+                        <span className="text-[10px] font-semibold text-gray-500 uppercase">Steps</span>
+                        <p className="text-xs text-gray-600 mt-0.5">{tc.userAction}</p>
+                      </div>
+                    )}
+                    {tc.expectedResults?.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-semibold text-gray-500 uppercase">Expected Results</span>
+                        <ol className="mt-1 space-y-0.5 list-decimal list-inside">
+                          {tc.expectedResults.map((r, j) => (
+                            <li key={j} className="text-xs text-gray-600">{r}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function EpicsStories({ project }) {
   const [expandedEpic, setExpandedEpic] = useState(null);
 
@@ -442,16 +539,7 @@ function EpicsStories({ project }) {
                     <div className="px-4 pb-3 border-t border-gray-100 pt-3 space-y-2">
                       {epic.description && <p className="text-xs text-gray-500 mb-2">{epic.description}</p>}
                       {(epic.stories || []).map(story => (
-                        <div key={story.id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-gray-50">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium text-gray-800">{story.title}</div>
-                            {story.description && <div className="text-[11px] text-gray-400 truncate mt-0.5">{story.description}</div>}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {story.storyPoints && <span className="text-[10px] font-mono bg-white rounded border border-gray-200 px-1.5 py-0.5 text-gray-500">{story.storyPoints} SP</span>}
-                            {story.jiraKey && <span className="text-[10px] font-mono text-blue-600">{story.jiraKey}</span>}
-                          </div>
-                        </div>
+                        <StoryDetail key={story.id} story={story} />
                       ))}
                     </div>
                   </motion.div>

@@ -212,7 +212,7 @@ router.post('/ai/sync-jira', async (req, res) => {
         const createdStory = await createStory(
           projectKey, story.title,
           story.description || '', story.acceptanceCriteria || '',
-          epicKey
+          epicKey, story.testCases || []
         );
         console.log(`[Sync] Created story: ${createdStory.key} - ${story.title}`);
 
