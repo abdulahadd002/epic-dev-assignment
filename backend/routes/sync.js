@@ -48,6 +48,9 @@ router.post('/ai/sync-jira', async (req, res) => {
     return res.status(400).json({ error: 'At least 2 approved epics are required to sync.' });
   }
 
+  // Collect non-fatal warnings to report back to frontend
+  const warnings = [];
+
   try {
     // Step 0: Auto-create Jira project and discover its board
     let projectKey;
@@ -83,19 +86,26 @@ router.post('/ai/sync-jira', async (req, res) => {
     if (!jiraBoardId) {
       await new Promise((r) => setTimeout(r, 2000));
       const boards = await getProjectBoards(projectKey);
-      if (boards.length > 0) {
-        jiraBoardId = boards[0].id;
-        console.log(`[Sync] Found board: ${boards[0].name} (ID: ${jiraBoardId})`);
+      // Prefer a Scrum board (supports sprints); fall back to any board
+      const scrumBoard = boards.find(b => b.type === 'scrum');
+      const selectedBoard = scrumBoard || boards[0];
+      if (selectedBoard) {
+        jiraBoardId = selectedBoard.id;
+        console.log(`[Sync] Found board: ${selectedBoard.name} (ID: ${jiraBoardId}, type: ${selectedBoard.type})`);
+        if (selectedBoard.type !== 'scrum') {
+          warnings.push(`Board "${selectedBoard.name}" is ${selectedBoard.type} type — sprints may not be supported`);
+        }
       } else {
+        warnings.push('No board found for project — sprint creation will be skipped');
         console.warn('[Sync] No board found for project — sprint creation will be skipped');
       }
     }
 
-    // Step 1: Calculate total project duration
+    // Step 1: Calculate total project duration with validation
     const startDate = new Date();
     const endDate = new Date();
     if (deadline && deadline.value) {
-      const v = parseInt(deadline.value) || 2;
+      const v = Math.max(1, parseInt(deadline.value) || 2); // Ensure positive value
       switch (deadline.unit) {
         case 'hours':  endDate.setHours(endDate.getHours() + v); break;
         case 'days':   endDate.setDate(endDate.getDate() + v); break;
@@ -105,6 +115,12 @@ router.post('/ai/sync-jira', async (req, res) => {
       }
     } else {
       endDate.setDate(endDate.getDate() + 14);
+    }
+
+    // Validate date range
+    if (endDate <= startDate) {
+      endDate.setDate(startDate.getDate() + 14);
+      warnings.push('Invalid deadline — defaulting to 2 weeks');
     }
 
     const numSprints = Math.max(1, Math.min(10, parseInt(requestedSprintCount) || 1));
@@ -125,7 +141,9 @@ router.post('/ai/sync-jira', async (req, res) => {
           sprints.push(sprint);
           console.log(`[Sync] Created sprint: ${sprint.name} (ID: ${sprint.id})`);
         } catch (err) {
-          console.warn(`[Sync] Sprint ${i + 1} creation failed: ${err.message}`);
+          const msg = `Sprint ${i + 1} creation failed: ${err.message}`;
+          warnings.push(msg);
+          console.warn(`[Sync] ${msg}`);
         }
       }
     }
@@ -146,6 +164,7 @@ router.post('/ai/sync-jira', async (req, res) => {
     // Step 4: Resolve Jira accountIds from developer usernames
     const allDevUsernames = new Set([...Object.values(storyAssignmentMap), ...Object.values(epicAssignmentMap)]);
     const accountIdCache = {};
+    const unresolvedUsers = [];
     for (const username of allDevUsernames) {
       if (!username) continue;
       const jiraQuery = developerJiraMap[username] || username;
@@ -155,11 +174,16 @@ router.post('/ai/sync-jira', async (req, res) => {
           accountIdCache[username] = users[0].accountId;
           console.log(`[Sync] Resolved Jira user: ${username} → ${users[0].displayName}`);
         } else {
-          console.warn(`[Sync] No Jira user found for "${jiraQuery}"`);
+          unresolvedUsers.push(username);
+          console.warn(`[Sync] No active Jira user found for "${jiraQuery}"`);
         }
       } catch (err) {
+        unresolvedUsers.push(username);
         console.warn(`[Sync] Could not find Jira user for "${jiraQuery}": ${err.message}`);
       }
+    }
+    if (unresolvedUsers.length > 0) {
+      warnings.push(`Could not resolve Jira accounts for: ${unresolvedUsers.join(', ')}`);
     }
 
     // Step 4b: Add developers to the Jira project team (Member role)
@@ -171,18 +195,25 @@ router.post('/ai/sync-jira', async (req, res) => {
         const roleId = roles['Member'] || roles['Developers'] || roles['Developer']
           || Object.entries(roles).find(([name]) => !name.toLowerCase().includes('admin'))?.[1];
         if (roleId) {
+          let addedCount = 0;
           for (const accountId of resolvedAccountIds) {
             try {
               await addUserToProjectRole(projectKey, roleId, accountId);
+              addedCount++;
             } catch (err) {
               console.warn(`[Sync] Could not add user to project role: ${err.message}`);
             }
           }
-          console.log(`[Sync] Added ${resolvedAccountIds.length} developers to project team`);
+          console.log(`[Sync] Added ${addedCount}/${resolvedAccountIds.length} developers to project team`);
+          if (addedCount < resolvedAccountIds.length) {
+            warnings.push(`Only ${addedCount}/${resolvedAccountIds.length} developers added to project team`);
+          }
         } else {
+          warnings.push('No suitable project role found for team members');
           console.warn('[Sync] No suitable project role found for team members');
         }
       } catch (err) {
+        warnings.push(`Could not set up project team: ${err.message}`);
         console.warn(`[Sync] Could not set up project team: ${err.message}`);
       }
     }
@@ -190,6 +221,8 @@ router.post('/ai/sync-jira', async (req, res) => {
     // Step 5: Create epics and stories, assign devs, set story points
     const results = [];
     const allCreatedStories = []; // { key, storyPoints, epicIdx }
+    let assignmentFailures = 0;
+    let pointsFailures = 0;
 
     for (let eIdx = 0; eIdx < approvedEpics.length; eIdx++) {
       const epic = approvedEpics[eIdx];
@@ -201,6 +234,7 @@ router.post('/ai/sync-jira', async (req, res) => {
       const epicDevUsername = epicAssignmentMap[epic.id];
       if (epicDevUsername && accountIdCache[epicDevUsername]) {
         try { await assignIssue(epicKey, accountIdCache[epicDevUsername]); } catch (err) {
+          assignmentFailures++;
           console.warn(`[Sync] Could not assign ${epicKey} to ${epicDevUsername}: ${err.message}`);
         }
       }
@@ -220,6 +254,7 @@ router.post('/ai/sync-jira', async (req, res) => {
         const sp = parseInt(story.storyPoints || 5);
         if (sp) {
           try { await updateStoryPoints(createdStory.key, sp); } catch (err) {
+            pointsFailures++;
             console.warn(`[Sync] Could not set story points on ${createdStory.key}: ${err.message}`);
           }
         }
@@ -228,6 +263,7 @@ router.post('/ai/sync-jira', async (req, res) => {
         const storyDevUsername = storyAssignmentMap[story.id] || epicDevUsername;
         if (storyDevUsername && accountIdCache[storyDevUsername]) {
           try { await assignIssue(createdStory.key, accountIdCache[storyDevUsername]); } catch (err) {
+            assignmentFailures++;
             console.warn(`[Sync] Could not assign ${createdStory.key}: ${err.message}`);
           }
         }
@@ -239,34 +275,29 @@ router.post('/ai/sync-jira', async (req, res) => {
       results.push({ epicId: epic.id, epicKey, stories: storyResults });
     }
 
+    if (assignmentFailures > 0) {
+      warnings.push(`${assignmentFailures} issue assignment(s) failed — check Jira user permissions`);
+    }
+    if (pointsFailures > 0) {
+      warnings.push(`${pointsFailures} story point update(s) failed — story points field may not be configured`);
+    }
+
     // Step 6: Distribute stories across sprints and move them
+    let moveFailures = 0;
     if (sprints.length > 0 && allCreatedStories.length > 0) {
       if (sprints.length === 1) {
-        // Single sprint: move all stories + epic keys
-        const allKeys = [
-          ...results.map(r => r.epicKey),
-          ...allCreatedStories.map(s => s.key),
-        ];
+        // Single sprint: move all stories (not epics — epics don't belong in sprints)
+        const storyKeys = allCreatedStories.map(s => s.key);
         try {
-          await moveIssueToSprint(sprints[0].id, allKeys);
-          console.log(`[Sync] Moved ${allKeys.length} issues to sprint ${sprints[0].id}`);
+          await moveIssueToSprint(sprints[0].id, storyKeys);
+          console.log(`[Sync] Moved ${storyKeys.length} stories to sprint ${sprints[0].id}`);
         } catch (err) {
-          console.warn(`[Sync] Could not move issues to sprint: ${err.message}`);
+          moveFailures += storyKeys.length;
+          console.warn(`[Sync] Could not move stories to sprint: ${err.message}`);
         }
       } else {
-        // Multi-sprint: distribute stories by points, epics go to first sprint
+        // Multi-sprint: distribute stories by points
         const storyBins = distributeStoriesAcrossSprints(allCreatedStories, sprints.length);
-
-        // Move all epic keys to first sprint
-        const epicKeys = results.map(r => r.epicKey);
-        if (epicKeys.length > 0) {
-          try {
-            await moveIssueToSprint(sprints[0].id, epicKeys);
-            console.log(`[Sync] Moved ${epicKeys.length} epics to sprint 1`);
-          } catch (err) {
-            console.warn(`[Sync] Could not move epics to sprint 1: ${err.message}`);
-          }
-        }
 
         // Move story batches to their sprints
         for (let i = 0; i < sprints.length; i++) {
@@ -276,21 +307,26 @@ router.post('/ai/sync-jira', async (req, res) => {
             await moveIssueToSprint(sprints[i].id, storyKeys);
             console.log(`[Sync] Moved ${storyKeys.length} stories to sprint ${i + 1} (ID: ${sprints[i].id})`);
           } catch (err) {
+            moveFailures += storyKeys.length;
             console.warn(`[Sync] Could not move stories to sprint ${i + 1}: ${err.message}`);
           }
         }
       }
     }
 
+    if (moveFailures > 0) {
+      warnings.push(`${moveFailures} issue(s) could not be moved to sprints`);
+    }
+
     // Step 7: Start the first sprint so it appears on the board
     if (sprints.length > 0) {
       try {
-        // Compute first sprint's date range for activation
         const s1Start = new Date(startDate.getTime());
         const s1End = new Date(startDate.getTime() + sprintMs);
         await startSprint(sprints[0].id, s1Start.toISOString(), s1End.toISOString(), jiraBoardId);
         console.log(`[Sync] Started sprint: ${sprints[0].name} (ID: ${sprints[0].id})`);
       } catch (err) {
+        warnings.push(`Could not start sprint: ${err.message}`);
         console.warn(`[Sync] Could not start sprint: ${err.message}`);
       }
     }
@@ -305,6 +341,7 @@ router.post('/ai/sync-jira', async (req, res) => {
       jiraProjectKey: projectKey,
       jiraBoardId: jiraBoardId,
       teamMembers: Object.keys(accountIdCache),
+      warnings,
     });
   } catch (err) {
     console.error('[Sync] Error:', err);

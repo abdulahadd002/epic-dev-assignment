@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, Loader2, CheckCircle2, AlertCircle, Users, FolderPlus, GitBranch, UserPlus, Play } from 'lucide-react';
+import { Upload, Loader2, CheckCircle2, AlertCircle, AlertTriangle, Users, FolderPlus, GitBranch, UserPlus, Play } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SYNC_STEPS = [
@@ -15,6 +15,7 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
   const [error, setError] = useState('');
   const [createdKey, setCreatedKey] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
+  const [syncWarnings, setSyncWarnings] = useState([]);
 
   const approvedEpics = (epics || []).filter((e) => e.status === 'approved');
   const canSync = approvedEpics.length >= 2;
@@ -57,6 +58,7 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
 
       const data = await res.json();
       setCreatedKey(data.jiraProjectKey);
+      setSyncWarnings(data.warnings || []);
       setStatus('success');
       if (onSyncComplete) onSyncComplete(data.results, data.sprintId, data.jiraProjectKey, data.jiraBoardId);
     } catch (err) {
@@ -86,6 +88,17 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
             </div>
           ))}
         </div>
+        {syncWarnings.length > 0 && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
+            <div className="flex items-center gap-1.5 text-amber-700 mb-1">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span className="text-xs font-semibold">{syncWarnings.length} warning{syncWarnings.length > 1 ? 's' : ''}</span>
+            </div>
+            {syncWarnings.map((w, i) => (
+              <p key={i} className="text-xs text-amber-600 pl-5">• {w}</p>
+            ))}
+          </div>
+        )}
       </motion.div>
     );
   }

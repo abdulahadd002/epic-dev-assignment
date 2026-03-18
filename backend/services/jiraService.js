@@ -19,55 +19,208 @@ function jiraFetch(path, options = {}) {
   return fetch(url, { ...options, headers: { ...getAuthHeaders(), ...(options.headers || {}) } });
 }
 
+/**
+ * Parse Jira error response into a readable message.
+ * Handles multiple Jira error formats: errorMessages[], errors{}, error_description.
+ */
+function parseJiraError(err, fallbackStatus) {
+  if (err.errorMessages?.length) return err.errorMessages[0];
+  if (err.errors && Object.keys(err.errors).length > 0) return Object.values(err.errors).join(', ');
+  if (err.error_description) return err.error_description;
+  if (err.message) return err.message;
+  return `Jira API error: ${fallbackStatus}`;
+}
+
+// ─── Custom Field Discovery ─────────────────────────────────────────────────
+// Jira Cloud custom field IDs vary per instance. We discover them dynamically.
+let _fieldCache = null;
+let _fieldCacheTime = 0;
+const FIELD_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+async function discoverFields() {
+  const now = Date.now();
+  if (_fieldCache && now - _fieldCacheTime < FIELD_CACHE_TTL) return _fieldCache;
+
+  try {
+    const res = await jiraFetch('/rest/api/3/field');
+    if (!res.ok) throw new Error(`Field discovery failed: ${res.status}`);
+    const fields = await res.json();
+
+    const result = {
+      storyPointsField: null,
+      epicLinkField: null,
+      epicNameField: null,
+    };
+
+    for (const f of fields) {
+      const id = f.id;
+      const name = (f.name || '').toLowerCase();
+      const schema = f.schema || {};
+
+      // Story Points — look for the field by name or known custom type
+      if (!result.storyPointsField) {
+        if (name === 'story points' || name === 'story point estimate'
+          || schema.custom === 'com.atlassian.jira.plugin.system.customfieldtypes:float'
+             && name.includes('story')) {
+          result.storyPointsField = id;
+        }
+      }
+
+      // Epic Link — the field that links stories to epics
+      if (!result.epicLinkField) {
+        if (name === 'epic link' || schema.custom === 'com.pyxis.greenhopper.jira:gh-epic-link') {
+          result.epicLinkField = id;
+        }
+      }
+
+      // Epic Name — used when creating epics
+      if (!result.epicNameField) {
+        if (name === 'epic name' || schema.custom === 'com.pyxis.greenhopper.jira:gh-epic-label') {
+          result.epicNameField = id;
+        }
+      }
+    }
+
+    // Fallback to common defaults if discovery failed
+    if (!result.storyPointsField) result.storyPointsField = 'customfield_10016';
+    if (!result.epicLinkField) result.epicLinkField = 'customfield_10014';
+
+    _fieldCache = result;
+    _fieldCacheTime = now;
+    console.log(`[Jira] Field discovery: SP=${result.storyPointsField}, EpicLink=${result.epicLinkField}, EpicName=${result.epicNameField || 'N/A'}`);
+    return result;
+  } catch (err) {
+    console.warn(`[Jira] Field discovery failed, using defaults: ${err.message}`);
+    _fieldCache = {
+      storyPointsField: 'customfield_10016',
+      epicLinkField: 'customfield_10014',
+      epicNameField: null,
+    };
+    _fieldCacheTime = now;
+    return _fieldCache;
+  }
+}
+
+/**
+ * Build the field list for issue queries, including discovered custom fields.
+ */
+async function getIssueFieldList() {
+  const fields = await discoverFields();
+  const base = ['summary', 'status', 'issuetype', 'priority', 'assignee', 'labels',
+    'created', 'updated', 'resolutiondate', 'statuscategorychangedate'];
+  if (fields.storyPointsField) base.push(fields.storyPointsField);
+  return { fieldList: base.join(','), spField: fields.storyPointsField };
+}
+
+/**
+ * Extract story points from issue fields using discovered field ID.
+ */
+function extractStoryPoints(issueFields, spField) {
+  if (spField && issueFields[spField] != null) return issueFields[spField];
+  // Fallback checks for common field IDs
+  return issueFields.customfield_10016 || issueFields.customfield_10028 || null;
+}
+
+/**
+ * Map a raw Jira issue to our normalized format.
+ */
+function mapIssue(issue, spField) {
+  const f = issue.fields;
+  return {
+    id: issue.id,
+    key: issue.key,
+    summary: f.summary,
+    status: f.status?.name || 'To Do',
+    statusCategory: f.status?.statusCategory?.name || 'To Do',
+    issueType: f.issuetype?.name || 'Story',
+    priority: f.priority?.name || 'Medium',
+    assignee: f.assignee
+      ? { name: f.assignee.displayName, avatarUrl: f.assignee.avatarUrls?.['48x48'] }
+      : null,
+    storyPoints: extractStoryPoints(f, spField),
+    labels: f.labels || [],
+    created: f.created,
+    updated: f.updated,
+    resolutionDate: f.resolutiondate || null,
+    statusCategoryChangeDate: f.statuscategorychangedate || null,
+  };
+}
+
+// ─── Sprints ────────────────────────────────────────────────────────────────
+
 export async function getSprints(boardId) {
   const id = boardId || process.env.JIRA_BOARD_ID;
-  const res = await jiraFetch(`/rest/agile/1.0/board/${id}/sprint?maxResults=50`);
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
-  const data = await res.json();
-  return (data.values || []).map((s) => ({
-    id: s.id,
-    name: s.name,
-    state: s.state,
-    startDate: s.startDate,
-    endDate: s.endDate,
-    goal: s.goal,
-  }));
+  // Paginate to retrieve all sprints (Agile API max is 50 per page)
+  let allSprints = [];
+  let startAt = 0;
+  while (true) {
+    const res = await jiraFetch(`/rest/agile/1.0/board/${id}/sprint?maxResults=50&startAt=${startAt}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(parseJiraError(err, res.status));
+    }
+    const data = await res.json();
+    const sprints = (data.values || []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      state: s.state,
+      startDate: s.startDate,
+      endDate: s.endDate,
+      goal: s.goal,
+    }));
+    allSprints = allSprints.concat(sprints);
+    if (data.isLast !== false || sprints.length === 0) break;
+    startAt += sprints.length;
+  }
+  return allSprints;
 }
 
 export async function getSprintDetails(sprintId) {
   const res = await jiraFetch(`/rest/agile/1.0/sprint/${sprintId}`);
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
   const s = await res.json();
   return { id: s.id, name: s.name, state: s.state, startDate: s.startDate, endDate: s.endDate, goal: s.goal };
 }
 
+// ─── Issues ────────────────────────────────────────────────────────────────
+
 export async function getSprintIssues(sprintId) {
+  const { fieldList, spField } = await getIssueFieldList();
   const res = await jiraFetch(
-    `/rest/agile/1.0/sprint/${sprintId}/issue?maxResults=200&fields=summary,status,issuetype,priority,assignee,story_points,customfield_10016,customfield_10028,labels,created,updated,resolutiondate,statuscategorychangedate`
+    `/rest/agile/1.0/sprint/${sprintId}/issue?maxResults=200&fields=${fieldList}`
   );
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
   const data = await res.json();
-  return (data.issues || []).map((issue) => {
-    const f = issue.fields;
-    return {
-      id: issue.id,
-      key: issue.key,
-      summary: f.summary,
-      status: f.status?.name || 'To Do',
-      statusCategory: f.status?.statusCategory?.name || 'To Do',
-      issueType: f.issuetype?.name || 'Story',
-      priority: f.priority?.name || 'Medium',
-      assignee: f.assignee
-        ? { name: f.assignee.displayName, avatarUrl: f.assignee.avatarUrls?.['48x48'] }
-        : null,
-      storyPoints: f.customfield_10016 || f.story_points || f.customfield_10028 || null,
-      labels: f.labels || [],
-      created: f.created,
-      updated: f.updated,
-      resolutionDate: f.resolutiondate || null,
-      statusCategoryChangeDate: f.statuscategorychangedate || null,
-    };
-  });
+  return (data.issues || []).map((issue) => mapIssue(issue, spField));
+}
+
+export async function getProjectIssues(projectKey) {
+  const { fieldList, spField } = await getIssueFieldList();
+  // Escape project key for JQL safety
+  const safeKey = projectKey.replace(/"/g, '\\"');
+  const jql = encodeURIComponent(`project = "${safeKey}" AND issuetype != Epic ORDER BY status ASC, key ASC`);
+  const res = await jiraFetch(`/rest/api/3/search?jql=${jql}&maxResults=200&fields=${fieldList}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
+  const data = await res.json();
+  return (data.issues || []).map((issue) => mapIssue(issue, spField));
+}
+
+// ─── Burndown ────────────────────────────────────────────────────────────────
+
+// Status categories that indicate "done" — case-insensitive
+const DONE_CATEGORIES = new Set(['done', 'complete', 'completed', 'closed', 'resolved']);
+
+function isDoneCategory(statusCategory) {
+  return DONE_CATEGORIES.has((statusCategory || '').toLowerCase());
 }
 
 export async function getBurndownData(sprintId) {
@@ -81,30 +234,26 @@ export async function getBurndownData(sprintId) {
   const totalDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
 
   // Count story points — if custom fields are null, fall back to counting issues as 1 point each
-  let totalPoints = issues.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
+  const nonEpicIssues = issues.filter(i => (i.issueType || '').toLowerCase() !== 'epic');
+  let totalPoints = nonEpicIssues.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
   const hasStoryPoints = totalPoints > 0;
   if (!hasStoryPoints) {
-    // No story points set — use issue count as proxy (1 point per issue)
-    totalPoints = issues.filter(i => (i.issueType || '').toLowerCase() !== 'epic').length;
+    totalPoints = nonEpicIssues.length;
   }
 
-  // Determine when each issue was completed
-  // Use statusCategory === 'Done' to identify completed items
-  const completionDates = issues
-    .filter(i => i.statusCategory === 'Done')
+  const completionDates = nonEpicIssues
+    .filter(i => isDoneCategory(i.statusCategory))
     .map(i => ({
-      points: hasStoryPoints ? (i.storyPoints || 0) : ((i.issueType || '').toLowerCase() !== 'epic' ? 1 : 0),
+      points: hasStoryPoints ? (i.storyPoints || 0) : 1,
       completedAt: new Date(i.resolutionDate || i.statusCategoryChangeDate || i.updated),
     }));
 
-  // Also count currently-done items without dates (for live "now" point)
-  const currentDonePoints = issues
-    .filter(i => i.statusCategory === 'Done')
-    .reduce((sum, i) => sum + (hasStoryPoints ? (i.storyPoints || 0) : ((i.issueType || '').toLowerCase() !== 'epic' ? 1 : 0)), 0);
+  const currentDonePoints = nonEpicIssues
+    .filter(i => isDoneCategory(i.statusCategory))
+    .reduce((sum, i) => sum + (hasStoryPoints ? (i.storyPoints || 0) : 1), 0);
 
   const points = [];
 
-  // Generate historical day-by-day points
   for (let d = 0; d <= totalDays; d++) {
     const date = new Date(start);
     date.setDate(start.getDate() + d);
@@ -127,8 +276,6 @@ export async function getBurndownData(sprintId) {
     });
   }
 
-  // Add a live "Now" point if we only have 1 historical point (same day as start)
-  // This ensures the chart always has at least 2 points to draw a line
   if (points.length === 1) {
     const elapsed = (now - start) / (1000 * 60 * 60 * 24);
     const idealNow = totalPoints - (totalPoints / totalDays) * elapsed;
@@ -140,45 +287,26 @@ export async function getBurndownData(sprintId) {
     });
   }
 
-  console.log(`[Burndown] Sprint ${sprintId}: ${issues.length} issues, ${totalPoints} points (${hasStoryPoints ? 'SP' : 'count'}), ${currentDonePoints} done, ${points.length} data points`);
+  console.log(`[Burndown] Sprint ${sprintId}: ${nonEpicIssues.length} stories, ${totalPoints} points (${hasStoryPoints ? 'SP' : 'count'}), ${currentDonePoints} done, ${points.length} data points`);
 
   return points;
 }
 
-export async function getProjectIssues(projectKey) {
-  const jql = encodeURIComponent(`project = "${projectKey}" AND issuetype != Epic ORDER BY status ASC, key ASC`);
-  const fields = 'summary,status,issuetype,priority,assignee,story_points,customfield_10016,customfield_10028,labels,created,updated,resolutiondate,statuscategorychangedate';
-  const res = await jiraFetch(`/rest/api/3/search?jql=${jql}&maxResults=200&fields=${fields}`);
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
-  const data = await res.json();
-  return (data.issues || []).map((issue) => {
-    const f = issue.fields;
-    return {
-      id: issue.id,
-      key: issue.key,
-      summary: f.summary,
-      status: f.status?.name || 'To Do',
-      statusCategory: f.status?.statusCategory?.name || 'To Do',
-      issueType: f.issuetype?.name || 'Story',
-      priority: f.priority?.name || 'Medium',
-      assignee: f.assignee
-        ? { name: f.assignee.displayName, avatarUrl: f.assignee.avatarUrls?.['48x48'] }
-        : null,
-      storyPoints: f.customfield_10016 || f.story_points || f.customfield_10028 || null,
-      labels: f.labels || [],
-      created: f.created,
-      updated: f.updated,
-      resolutionDate: f.resolutiondate || null,
-      statusCategoryChangeDate: f.statuscategorychangedate || null,
-    };
-  });
-}
+// ─── Transitions ────────────────────────────────────────────────────────────
 
 export async function getIssueTransitions(issueKey) {
   const res = await jiraFetch(`/rest/api/3/issue/${issueKey}/transitions`);
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
   const data = await res.json();
-  return (data.transitions || []).map((t) => ({ id: t.id, name: t.name, to: t.to?.name }));
+  return (data.transitions || []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    to: t.to?.name,
+    toCategory: t.to?.statusCategory?.name || null,
+  }));
 }
 
 export async function transitionIssue(issueKey, transitionId) {
@@ -186,8 +314,13 @@ export async function transitionIssue(issueKey, transitionId) {
     method: 'POST',
     body: JSON.stringify({ transition: { id: transitionId } }),
   });
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
 }
+
+// ─── Issue Creation ─────────────────────────────────────────────────────────
 
 export async function createEpic(projectKey, title, description) {
   const res = await jiraFetch('/rest/api/3/issue', {
@@ -199,20 +332,22 @@ export async function createEpic(projectKey, title, description) {
         description: {
           type: 'doc',
           version: 1,
-          content: [{ type: 'paragraph', content: [{ type: 'text', text: description }] }],
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: description || title }] }],
         },
         issuetype: { name: 'Epic' },
       },
     }),
   });
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.errorMessages?.[0] || `Jira API error: ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
   }
   return res.json();
 }
 
 export async function createStory(projectKey, title, description, acceptanceCriteria, epicKey, testCases) {
+  const fields = await discoverFields();
+
   // Build ADF content blocks for the issue description
   const contentBlocks = [];
 
@@ -257,7 +392,6 @@ export async function createStory(projectKey, title, description, acceptanceCrit
     }
   }
 
-  // Fallback: ensure at least one content block
   if (contentBlocks.length === 0) {
     contentBlocks.push({ type: 'paragraph', content: [{ type: 'text', text: title }] });
   }
@@ -274,28 +408,42 @@ export async function createStory(projectKey, title, description, acceptanceCrit
       issuetype: { name: 'Story' },
     },
   };
-  if (epicKey) body.fields['customfield_10014'] = epicKey;
+
+  // Set epic link using discovered field ID
+  if (epicKey && fields.epicLinkField) {
+    body.fields[fields.epicLinkField] = epicKey;
+  }
 
   const res = await jiraFetch('/rest/api/3/issue', { method: 'POST', body: JSON.stringify(body) });
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.errorMessages?.[0] || `Jira API error: ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
   }
   return res.json();
 }
 
+// ─── Connection & Auth ──────────────────────────────────────────────────────
+
 export async function testConnection() {
   const res = await jiraFetch('/rest/api/3/myself');
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
   return res.json();
 }
 
 export async function getBoards() {
   const res = await jiraFetch('/rest/agile/1.0/board?maxResults=50');
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
   const data = await res.json();
   return (data.values || []).map((b) => ({ id: b.id, name: b.name, type: b.type }));
 }
+
+// ─── Sprint Management ──────────────────────────────────────────────────────
 
 export async function createSprint(boardId, name, startDate, endDate) {
   const res = await jiraFetch('/rest/agile/1.0/sprint', {
@@ -310,7 +458,7 @@ export async function createSprint(boardId, name, startDate, endDate) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.errorMessages?.[0] || `Sprint creation failed: ${res.status}`);
+    throw new Error(parseJiraError(err, res.status));
   }
   return res.json();
 }
@@ -323,17 +471,20 @@ export async function startSprint(sprintId, startDate, endDate, boardId) {
       const activeSprint = existingSprints.find(s => s.state === 'active');
       if (activeSprint && activeSprint.id !== sprintId) {
         console.log(`[Jira] Closing existing active sprint ${activeSprint.id} (${activeSprint.name}) to activate new one`);
-        await jiraFetch(`/rest/agile/1.0/sprint/${activeSprint.id}`, {
+        const closeRes = await jiraFetch(`/rest/agile/1.0/sprint/${activeSprint.id}`, {
           method: 'PUT',
           body: JSON.stringify({ state: 'closed' }),
         });
+        if (!closeRes.ok) {
+          // Sprint may already be closed — non-fatal
+          console.warn(`[Jira] Sprint close returned ${closeRes.status} — may already be closed`);
+        }
       }
     } catch (err) {
       console.warn(`[Jira] Could not check/close existing active sprint: ${err.message}`);
     }
   }
 
-  // Jira requires startDate + endDate when activating a sprint
   const body = { state: 'active' };
   if (startDate) body.startDate = startDate;
   if (endDate) body.endDate = endDate;
@@ -343,7 +494,7 @@ export async function startSprint(sprintId, startDate, endDate, boardId) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.errorMessages?.[0] || err.errors?.state || `Sprint start failed: ${res.status}`);
+    throw new Error(parseJiraError(err, res.status));
   }
   return res.json();
 }
@@ -353,30 +504,52 @@ export async function moveIssueToSprint(sprintId, issueKeys) {
     method: 'POST',
     body: JSON.stringify({ issues: issueKeys }),
   });
-  if (!res.ok) throw new Error(`Failed to move issues to sprint: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
 }
+
+// ─── Issue Operations ───────────────────────────────────────────────────────
 
 export async function assignIssue(issueKey, accountId) {
   const res = await jiraFetch(`/rest/api/3/issue/${issueKey}/assignee`, {
     method: 'PUT',
     body: JSON.stringify({ accountId }),
   });
-  if (!res.ok) throw new Error(`Failed to assign ${issueKey}: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
 }
 
 export async function updateStoryPoints(issueKey, points) {
+  const fields = await discoverFields();
+  const fieldId = fields.storyPointsField;
   const res = await jiraFetch(`/rest/api/3/issue/${issueKey}`, {
     method: 'PUT',
-    body: JSON.stringify({ fields: { customfield_10016: points } }),
+    body: JSON.stringify({ fields: { [fieldId]: points } }),
   });
-  if (!res.ok) throw new Error(`Failed to set story points on ${issueKey}: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
 }
 
+// ─── User Management ────────────────────────────────────────────────────────
+
 export async function searchUser(query) {
-  const res = await jiraFetch(`/rest/api/3/user/search?query=${encodeURIComponent(query)}&maxResults=5`);
-  if (!res.ok) throw new Error(`User search failed: ${res.status}`);
-  return res.json();
+  const res = await jiraFetch(`/rest/api/3/user/search?query=${encodeURIComponent(query)}&maxResults=10`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
+  const users = await res.json();
+  // Filter to active users only and return
+  return users.filter(u => u.active !== false);
 }
+
+// ─── Project Management ─────────────────────────────────────────────────────
 
 export function generateProjectKey(name) {
   const words = name.replace(/[^a-zA-Z0-9\s]/g, '').trim().split(/\s+/).filter(Boolean);
@@ -392,7 +565,10 @@ export function generateProjectKey(name) {
 
 export async function getMyself() {
   const res = await jiraFetch('/rest/api/3/myself');
-  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
   return res.json();
 }
 
@@ -409,7 +585,7 @@ export async function createProject(name, key, leadAccountId) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    const msg = err.errors ? Object.values(err.errors).join(', ') : (err.errorMessages?.[0] || `Project creation failed: ${res.status}`);
+    const msg = parseJiraError(err, res.status);
     const error = new Error(msg);
     error.status = res.status;
     throw error;
@@ -419,7 +595,10 @@ export async function createProject(name, key, leadAccountId) {
 
 export async function getProjectBoards(projectKey) {
   const res = await jiraFetch(`/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=10`);
-  if (!res.ok) throw new Error(`Failed to fetch boards for project ${projectKey}: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
   const data = await res.json();
   return (data.values || []).map((b) => ({ id: b.id, name: b.name, type: b.type }));
 }
@@ -429,9 +608,11 @@ export async function getProjectBoards(projectKey) {
  */
 export async function getProjectRoles(projectKey) {
   const res = await jiraFetch(`/rest/api/3/project/${encodeURIComponent(projectKey)}/role`);
-  if (!res.ok) throw new Error(`Failed to get project roles: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
   const data = await res.json();
-  // data is { "RoleName": "https://.../{roleId}", ... }
   const roles = {};
   for (const [name, url] of Object.entries(data)) {
     const match = url.match(/\/(\d+)$/);
@@ -450,7 +631,7 @@ export async function addUserToProjectRole(projectKey, roleId, accountId) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.errorMessages?.[0] || `Failed to add user to project role: ${res.status}`);
+    throw new Error(parseJiraError(err, res.status));
   }
   return res.json();
 }
