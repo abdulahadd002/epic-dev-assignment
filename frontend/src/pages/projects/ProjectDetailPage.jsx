@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useProjects } from '../../hooks/useProjects';
-import { useSprintIssues, useBurndownData, useSprintDetails } from '../../hooks/useSprintData';
+import { useSprintIssues, useProjectIssues, useBurndownData, useSprintDetails } from '../../hooks/useSprintData';
 import { useAlerts } from '../../hooks/useAlerts';
 import { calculateHealthScore } from '../../utils/healthScore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -686,7 +686,13 @@ function LocalProjectView({ project }) {
 
 function SyncedProjectView({ project }) {
   const sprintId = project.jiraSprintId;
-  const { issues, isLoading: issuesLoading, mutate: mutateIssues } = useSprintIssues(sprintId);
+  const projectKey = project.jiraProjectKey;
+  const { issues: projectIssues, isLoading: projectIssuesLoading, mutate: mutateProjectIssues } = useProjectIssues(projectKey);
+  const { issues: sprintIssues, isLoading: sprintIssuesLoading, mutate: mutateSprintIssues } = useSprintIssues(sprintId);
+  // Prefer project-level issues (gets all stories across all sprints); fall back to sprint issues
+  const issues = projectIssues.length > 0 ? projectIssues : sprintIssues;
+  const issuesLoading = projectKey ? projectIssuesLoading : sprintIssuesLoading;
+  const mutateIssues = projectKey ? mutateProjectIssues : mutateSprintIssues;
   const { burndown, isLoading: burndownLoading } = useBurndownData(sprintId);
   const { sprint } = useSprintDetails(sprintId);
   const { alerts } = useAlerts(issues);

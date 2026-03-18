@@ -145,6 +145,35 @@ export async function getBurndownData(sprintId) {
   return points;
 }
 
+export async function getProjectIssues(projectKey) {
+  const jql = encodeURIComponent(`project = "${projectKey}" AND issuetype != Epic ORDER BY status ASC, key ASC`);
+  const fields = 'summary,status,issuetype,priority,assignee,story_points,customfield_10016,customfield_10028,labels,created,updated,resolutiondate,statuscategorychangedate';
+  const res = await jiraFetch(`/rest/api/3/search?jql=${jql}&maxResults=200&fields=${fields}`);
+  if (!res.ok) throw new Error(`Jira API error: ${res.status}`);
+  const data = await res.json();
+  return (data.issues || []).map((issue) => {
+    const f = issue.fields;
+    return {
+      id: issue.id,
+      key: issue.key,
+      summary: f.summary,
+      status: f.status?.name || 'To Do',
+      statusCategory: f.status?.statusCategory?.name || 'To Do',
+      issueType: f.issuetype?.name || 'Story',
+      priority: f.priority?.name || 'Medium',
+      assignee: f.assignee
+        ? { name: f.assignee.displayName, avatarUrl: f.assignee.avatarUrls?.['48x48'] }
+        : null,
+      storyPoints: f.customfield_10016 || f.story_points || f.customfield_10028 || null,
+      labels: f.labels || [],
+      created: f.created,
+      updated: f.updated,
+      resolutionDate: f.resolutiondate || null,
+      statusCategoryChangeDate: f.statuscategorychangedate || null,
+    };
+  });
+}
+
 export async function getIssueTransitions(issueKey) {
   const res = await jiraFetch(`/rest/api/3/issue/${issueKey}/transitions`);
   if (!res.ok) throw new Error(`Jira API error: ${res.status}`);

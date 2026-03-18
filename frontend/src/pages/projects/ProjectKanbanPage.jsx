@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useProjects } from '../../hooks/useProjects';
-import { useSprintIssues } from '../../hooks/useSprintData';
+import { useSprintIssues, useProjectIssues } from '../../hooks/useSprintData';
 import { ArrowLeft, Columns3, RefreshCw, GripVertical, Flame, Search, Filter, X } from 'lucide-react';
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, pointerWithin, rectIntersection } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
@@ -135,7 +135,13 @@ export default function ProjectKanbanPage() {
   const navigate = useNavigate();
   const project = getProject(projectId);
   const sprintId = project?.jiraSprintId;
-  const { issues, isLoading, mutate: mutateIssues } = useSprintIssues(sprintId);
+  const projectKey = project?.jiraProjectKey;
+  const { issues: projectIssues, isLoading: projectLoading, mutate: mutateProjectIssues } = useProjectIssues(projectKey);
+  const { issues: sprintIssuesRaw, isLoading: sprintLoading, mutate: mutateSprintIssues } = useSprintIssues(sprintId);
+  // Prefer project-level issues (gets all stories across all sprints); fall back to sprint issues
+  const issues = projectIssues.length > 0 ? projectIssues : sprintIssuesRaw;
+  const isLoading = projectKey ? projectLoading : sprintLoading;
+  const mutateIssues = projectKey ? mutateProjectIssues : mutateSprintIssues;
 
   const [pendingMoves, setPendingMoves] = useState({});
   const [activeIssue, setActiveIssue] = useState(null);

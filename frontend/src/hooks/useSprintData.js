@@ -36,6 +36,15 @@ export function useSprintIssues(sprintId) {
   return { issues: data || [], error, isLoading, mutate };
 }
 
+export function useProjectIssues(projectKey) {
+  const { data, error, isLoading, mutate } = useSWR(
+    projectKey ? `/api/jira/project/${projectKey}/issues` : null,
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { issues: data || [], error, isLoading, mutate };
+}
+
 export function useBurndownData(sprintId) {
   const { data, error, isLoading } = useSWR(
     sprintId ? `/api/jira/sprint/${sprintId}/burndown` : null,

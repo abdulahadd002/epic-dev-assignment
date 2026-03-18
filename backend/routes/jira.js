@@ -4,6 +4,7 @@ import {
   getSprints,
   getSprintDetails,
   getSprintIssues,
+  getProjectIssues,
   getBurndownData,
   getIssueTransitions,
   transitionIssue,
@@ -86,6 +87,15 @@ router.get('/jira/sprint/:sprintId/burndown', async (req, res) => {
     } else {
       res.json(data);
     }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/jira/project/:projectKey/issues', async (req, res) => {
+  try {
+    const issues = await getProjectIssues(req.params.projectKey);
+    res.json(issues);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
