@@ -215,7 +215,24 @@ export async function createSprint(boardId, name, startDate, endDate) {
   return res.json();
 }
 
-export async function startSprint(sprintId, startDate, endDate) {
+export async function startSprint(sprintId, startDate, endDate, boardId) {
+  // If there's already an active sprint on this board, close it first
+  if (boardId) {
+    try {
+      const existingSprints = await getSprints(boardId);
+      const activeSprint = existingSprints.find(s => s.state === 'active');
+      if (activeSprint && activeSprint.id !== sprintId) {
+        console.log(`[Jira] Closing existing active sprint ${activeSprint.id} (${activeSprint.name}) to activate new one`);
+        await jiraFetch(`/rest/agile/1.0/sprint/${activeSprint.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ state: 'closed' }),
+        });
+      }
+    } catch (err) {
+      console.warn(`[Jira] Could not check/close existing active sprint: ${err.message}`);
+    }
+  }
+
   // Jira requires startDate + endDate when activating a sprint
   const body = { state: 'active' };
   if (startDate) body.startDate = startDate;
