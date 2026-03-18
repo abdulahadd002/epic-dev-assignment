@@ -44,7 +44,18 @@ export default function AssignPage() {
   const [expandedEpics, setExpandedEpics] = useState({});
   const [showAddNew, setShowAddNew] = useState(false);
   const [reassigningStoryId, setReassigningStoryId] = useState(null);
-  const [jiraEmailMap, setJiraEmailMap] = useState(project?.jiraEmailMap || {});
+  // Auto-populate Jira mapping from roster's jiraUsername field
+  const [jiraEmailMap, setJiraEmailMap] = useState(() => {
+    const saved = project?.jiraEmailMap || {};
+    // Merge in jiraUsernames from roster for any devs not already mapped
+    for (const dev of rosterDevs) {
+      const uname = dev.username || dev.login;
+      if (dev.jiraUsername && !saved[uname]) {
+        saved[uname] = dev.jiraUsername;
+      }
+    }
+    return saved;
+  });
 
   useEffect(() => {
     if (isLoaded && !project) navigate('/projects');
@@ -631,7 +642,7 @@ export default function AssignPage() {
             Jira Team Mapping
           </h2>
           <p className="mb-4 text-xs text-gray-500">
-            Map each developer's GitHub username to their Jira email so they can be added to the project team and assigned issues automatically.
+            Jira handles are auto-filled from the developer roster. Edit if needed so developers can be added to the project team and assigned issues automatically.
           </p>
           <div className="space-y-2">
             {[...new Set(assignments.map(a => a.assigned_developer).filter(Boolean))].map((username) => {
