@@ -1,13 +1,35 @@
-import { useState } from 'react';
-import { Upload, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Upload, Loader2, CheckCircle2, AlertCircle, Users, FolderPlus, GitBranch, UserPlus, Play } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-export default function SyncButton({ epics, assignments, deadline, projectName, sprintCount, onSyncComplete }) {
-  const [status, setStatus] = useState('idle'); // idle | syncing | success | error
+const SYNC_STEPS = [
+  { key: 'project', label: 'Creating Jira project...', icon: FolderPlus, duration: 3000 },
+  { key: 'team', label: 'Adding developers to team...', icon: UserPlus, duration: 4000 },
+  { key: 'epics', label: 'Creating epics & stories...', icon: GitBranch, duration: 6000 },
+  { key: 'sprints', label: 'Setting up sprints & assigning...', icon: Users, duration: 4000 },
+  { key: 'start', label: 'Starting sprint...', icon: Play, duration: 2000 },
+];
+
+export default function SyncButton({ epics, assignments, deadline, projectName, sprintCount, developerJiraMap, onSyncComplete }) {
+  const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
   const [createdKey, setCreatedKey] = useState(null);
+  const [currentStep, setCurrentStep] = useState(0);
 
   const approvedEpics = (epics || []).filter((e) => e.status === 'approved');
   const canSync = approvedEpics.length >= 2;
+
+  // Animate through progress steps while syncing
+  useEffect(() => {
+    if (status !== 'syncing') return;
+    setCurrentStep(0);
+    let step = 0;
+    const timers = SYNC_STEPS.map((s, i) => {
+      const delay = SYNC_STEPS.slice(0, i).reduce((sum, st) => sum + st.duration, 0);
+      return setTimeout(() => { step = i; setCurrentStep(i); }, delay);
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [status]);
 
   const handleSync = async () => {
     if (!canSync) return;
@@ -24,6 +46,7 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
           deadline,
           projectName,
           sprintCount: sprintCount || 1,
+          developerJiraMap: developerJiraMap || {},
         }),
       });
 
@@ -44,12 +67,26 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
 
   if (status === 'success') {
     return (
-      <div className="flex items-center gap-2 text-green-700">
-        <CheckCircle2 className="h-5 w-5" />
-        <span className="text-sm font-medium">
-          Successfully synced to Jira{createdKey ? ` (project: ${createdKey})` : ''}!
-        </span>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-xl border border-green-200 bg-green-50 p-4"
+      >
+        <div className="flex items-center gap-2 text-green-700 mb-2">
+          <CheckCircle2 className="h-5 w-5" />
+          <span className="text-sm font-semibold">
+            Successfully synced to Jira{createdKey ? ` (project: ${createdKey})` : ''}!
+          </span>
+        </div>
+        <div className="space-y-1">
+          {SYNC_STEPS.map((step) => (
+            <div key={step.key} className="flex items-center gap-2 text-green-600">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span className="text-xs">{step.label.replace('...', '')} — done</span>
+            </div>
+          ))}
+        </div>
+      </motion.div>
     );
   }
 
@@ -57,7 +94,7 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
     <div className="space-y-3">
       <p className="text-sm text-gray-600">
         {canSync
-          ? `${approvedEpics.length} approved epics will be synced across ${sprintCount || 1} sprint${(sprintCount || 1) > 1 ? 's' : ''}. A new Jira project will be created automatically.`
+          ? `${approvedEpics.length} approved epics will be synced across ${sprintCount || 1} sprint${(sprintCount || 1) > 1 ? 's' : ''}. A new Jira project will be created automatically. Developers will be added to the team.`
           : 'At least 2 approved epics are required to sync to Jira.'}
       </p>
 
@@ -68,15 +105,56 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
         </div>
       )}
 
-      <button
+      {/* Progress steps */}
+      <AnimatePresence>
+        {status === 'syncing' && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden rounded-xl border border-blue-100 bg-blue-50/50 p-4"
+          >
+            <div className="space-y-2">
+              {SYNC_STEPS.map((step, i) => {
+                const StepIcon = step.icon;
+                const isActive = i === currentStep;
+                const isDone = i < currentStep;
+                return (
+                  <motion.div
+                    key={step.key}
+                    initial={{ opacity: 0.4 }}
+                    animate={{ opacity: isDone || isActive ? 1 : 0.4 }}
+                    className="flex items-center gap-2.5"
+                  >
+                    {isDone ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                    ) : isActive ? (
+                      <Loader2 className="h-4 w-4 text-blue-600 animate-spin flex-shrink-0" />
+                    ) : (
+                      <StepIcon className="h-4 w-4 text-gray-300 flex-shrink-0" />
+                    )}
+                    <span className={`text-xs font-medium ${isDone ? 'text-green-700' : isActive ? 'text-blue-700' : 'text-gray-400'}`}>
+                      {step.label}
+                    </span>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.button
         onClick={handleSync}
         disabled={!canSync || status === 'syncing'}
         className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+        whileHover={canSync && status !== 'syncing' ? { scale: 1.02 } : {}}
+        whileTap={canSync && status !== 'syncing' ? { scale: 0.97 } : {}}
       >
         {status === 'syncing' ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            Creating Jira project & syncing...
+            Syncing to Jira...
           </>
         ) : (
           <>
@@ -84,7 +162,7 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
             Sync to Jira
           </>
         )}
-      </button>
+      </motion.button>
     </div>
   );
 }

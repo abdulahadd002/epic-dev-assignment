@@ -304,6 +304,7 @@ router.post('/ai/sync-jira', async (req, res) => {
       totalIssues: results.reduce((s, r) => s + 1 + r.stories.length, 0),
       jiraProjectKey: projectKey,
       jiraBoardId: jiraBoardId,
+      teamMembers: Object.keys(accountIdCache),
     });
   } catch (err) {
     console.error('[Sync] Error:', err);

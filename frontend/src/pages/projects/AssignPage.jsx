@@ -44,6 +44,7 @@ export default function AssignPage() {
   const [expandedEpics, setExpandedEpics] = useState({});
   const [showAddNew, setShowAddNew] = useState(false);
   const [reassigningStoryId, setReassigningStoryId] = useState(null);
+  const [jiraEmailMap, setJiraEmailMap] = useState(project?.jiraEmailMap || {});
 
   useEffect(() => {
     if (isLoaded && !project) navigate('/projects');
@@ -206,6 +207,7 @@ export default function AssignPage() {
       jiraSprintId: sprintId,
       jiraProjectKey,
       jiraBoardId,
+      jiraEmailMap,
     });
   };
 
@@ -621,6 +623,49 @@ export default function AssignPage() {
         )}
       </div>
 
+      {/* Jira Team Mapping */}
+      {assignments.length > 0 && (
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6">
+          <h2 className="mb-1 text-base font-semibold text-gray-900 flex items-center gap-2">
+            <UserCheck className="h-4 w-4 text-blue-600" />
+            Jira Team Mapping
+          </h2>
+          <p className="mb-4 text-xs text-gray-500">
+            Map each developer's GitHub username to their Jira email so they can be added to the project team and assigned issues automatically.
+          </p>
+          <div className="space-y-2">
+            {[...new Set(assignments.map(a => a.assigned_developer).filter(Boolean))].map((username) => {
+              const dev = selectedDevs.find(d => (d.login || d.username) === username);
+              return (
+                <div key={username} className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 w-40 flex-shrink-0">
+                    {(dev?.avatar_url || dev?.avatar) && (
+                      <img src={dev?.avatar_url || dev?.avatar} className="h-6 w-6 rounded-full" alt="" />
+                    )}
+                    <span className="text-sm font-medium text-gray-700 truncate">{username}</span>
+                  </div>
+                  <input
+                    type="email"
+                    placeholder="Jira email (e.g. user@company.com)"
+                    value={jiraEmailMap[username] || ''}
+                    onChange={(e) => setJiraEmailMap(prev => ({ ...prev, [username]: e.target.value }))}
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  {jiraEmailMap[username] && (
+                    <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {Object.values(jiraEmailMap).filter(Boolean).length === 0 && (
+            <p className="mt-2 text-[11px] text-amber-600">
+              Without Jira emails, developers will be looked up by GitHub username (may not match).
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Jira Sync */}
       <div className="rounded-xl border border-gray-200 bg-white p-6">
         <h2 className="mb-4 text-base font-semibold text-gray-900">Sync to Jira</h2>
@@ -630,6 +675,7 @@ export default function AssignPage() {
           deadline={deadlineValue ? { value: deadlineValue, unit: deadlineUnit } : null}
           projectName={project.name}
           sprintCount={sprintCount}
+          developerJiraMap={jiraEmailMap}
           onSyncComplete={handleSyncComplete}
         />
       </div>
