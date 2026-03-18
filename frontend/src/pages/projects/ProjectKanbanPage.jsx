@@ -147,16 +147,22 @@ export default function ProjectKanbanPage() {
     if (isLoaded && !project) navigate('/projects');
   }, [isLoaded, project, navigate]);
 
+  // Filter out epics — only show stories/tasks/subtasks on kanban
+  const storyIssues = useMemo(() =>
+    (issues || []).filter(i => (i.issueType || '').toLowerCase() !== 'epic'),
+    [issues]
+  );
+
   // Merge SWR issues with pending optimistic moves
   const mergedIssues = useMemo(() => {
-    if (Object.keys(pendingMoves).length === 0) return issues;
-    return (issues || []).map(issue => {
+    if (Object.keys(pendingMoves).length === 0) return storyIssues;
+    return storyIssues.map(issue => {
       if (pendingMoves[issue.key]) {
         return { ...issue, status: pendingMoves[issue.key] };
       }
       return issue;
     });
-  }, [issues, pendingMoves]);
+  }, [storyIssues, pendingMoves]);
 
   // Apply filters
   const filteredIssues = useMemo(() => {
@@ -176,9 +182,9 @@ export default function ProjectKanbanPage() {
   }, [filteredIssues]);
 
   const assignees = useMemo(() => {
-    const names = new Set((issues || []).map(i => i.assignee?.name || 'Unassigned'));
+    const names = new Set(storyIssues.map(i => i.assignee?.name || 'Unassigned'));
     return [...names].sort();
-  }, [issues]);
+  }, [storyIssues]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -265,8 +271,8 @@ export default function ProjectKanbanPage() {
     );
   }
 
-  const totalIssues = issues?.length || 0;
-  const doneCount = (issues || []).filter(i => normalizeStatus(i.status) === 'Done').length;
+  const totalIssues = storyIssues.length;
+  const doneCount = storyIssues.filter(i => normalizeStatus(i.status) === 'Done').length;
 
   return (
     <div className="px-6 py-8">
@@ -325,7 +331,7 @@ export default function ProjectKanbanPage() {
         <div className="flex items-center justify-center py-20">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-500 border-t-transparent" />
         </div>
-      ) : !issues || issues.length === 0 ? (
+      ) : storyIssues.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
           <Columns3 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500">No sprint issues found.</p>
