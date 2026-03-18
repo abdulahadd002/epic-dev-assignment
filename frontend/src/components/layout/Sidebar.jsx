@@ -6,11 +6,7 @@ import {
   Zap,
   Users,
   LayoutDashboard,
-  Columns3,
-  BarChart3,
-  Settings,
   LogOut,
-  ChevronRight,
 } from 'lucide-react';
 
 const navSections = [
@@ -23,11 +19,9 @@ const navSections = [
     ],
   },
   {
-    label: 'Sprint Monitoring',
+    label: 'Overview',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/kanban', label: 'Kanban', icon: Columns3 },
-      { to: '/reports', label: 'Reports', icon: BarChart3 },
     ],
   },
 ];
@@ -79,14 +73,6 @@ export default function Sidebar() {
           </div>
         ))}
 
-        <div className="mb-1.5">
-          <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
-            Account
-          </p>
-          <div className="space-y-0.5">
-            <NavItem to="/settings" label="Settings" icon={Settings} />
-          </div>
-        </div>
       </nav>
 
       {/* Logout */}

@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { WorkflowProvider, useWorkflow } from './context/WorkflowContext'
 import { AuthProvider } from './context/AuthContext'
 import { ProjectsProvider } from './hooks/useProjects'
-import { JiraProvider } from './context/JiraContext'
 import { AnimatePresence, motion } from 'framer-motion'
 import { createContext, useContext } from 'react'
 import { useTheme } from './hooks/useTheme'
@@ -29,9 +28,6 @@ import VerifyPage from './pages/projects/VerifyPage'
 import AssignPage from './pages/projects/AssignPage'
 import DevelopersPage from './pages/DevelopersPage'
 import Dashboard from './pages/jira/Dashboard'
-import Kanban from './pages/jira/Kanban'
-import Reports from './pages/jira/Reports'
-import Settings from './pages/jira/Settings'
 
 // Theme context (kept for existing workflow compatibility)
 const ThemeContext = createContext({ theme: 'light', toggleTheme: () => {}, isDark: false })
@@ -87,14 +83,12 @@ function WorkflowApp() {
 // ─── Sidebar layout for new pages ──────────────────────────────────────────
 function SidebarLayout({ children }) {
   return (
-    <JiraProvider>
-      <div className="flex h-screen overflow-hidden" style={{ background: '#f9fafb' }}>
-        <Sidebar />
-        <div className="flex-1 overflow-auto">
-          {children}
-        </div>
+    <div className="flex h-screen overflow-hidden" style={{ background: '#f9fafb' }}>
+      <Sidebar />
+      <div className="flex-1 overflow-auto">
+        {children}
       </div>
-    </JiraProvider>
+    </div>
   )
 }
 
@@ -149,15 +143,6 @@ function App() {
             {/* Jira monitoring */}
             <Route path="/dashboard" element={
               <AuthGuard><SidebarLayout><Dashboard /></SidebarLayout></AuthGuard>
-            } />
-            <Route path="/kanban" element={
-              <AuthGuard><SidebarLayout><Kanban /></SidebarLayout></AuthGuard>
-            } />
-            <Route path="/reports" element={
-              <AuthGuard><SidebarLayout><Reports /></SidebarLayout></AuthGuard>
-            } />
-            <Route path="/settings" element={
-              <AuthGuard><SidebarLayout><Settings /></SidebarLayout></AuthGuard>
             } />
 
             {/* Catch-all */}
