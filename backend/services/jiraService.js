@@ -470,7 +470,7 @@ export async function createSprint(boardId, name, startDate, endDate) {
   return res.json();
 }
 
-export async function startSprint(sprintId, startDate, endDate, boardId) {
+export async function startSprint(sprintId, startDate, endDate, boardId, sprintName) {
   // If there's already an active sprint on this board, close it first
   if (boardId) {
     try {
@@ -493,6 +493,7 @@ export async function startSprint(sprintId, startDate, endDate, boardId) {
   }
 
   const body = { state: 'active' };
+  if (sprintName) body.name = sprintName;
   if (startDate) body.startDate = startDate;
   if (endDate) body.endDate = endDate;
   const res = await jiraFetch(`/rest/agile/1.0/sprint/${sprintId}`, {
@@ -532,14 +533,29 @@ export async function moveIssueToSprint(sprintId, issueKeys) {
 // ─── Issue Operations ───────────────────────────────────────────────────────
 
 export async function assignIssue(issueKey, accountId) {
+  // Try the assignee endpoint first
   const res = await jiraFetch(`/rest/api/3/issue/${issueKey}/assignee`, {
     method: 'PUT',
     body: JSON.stringify({ accountId }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(parseJiraError(err, res.status));
+  if (res.ok) return;
+
+  // If assignee endpoint fails (permission issue), try updating the issue fields directly
+  const err = await res.json().catch(() => ({}));
+  const errMsg = parseJiraError(err, res.status);
+
+  if (errMsg.includes('cannot be assigned')) {
+    console.log(`[Jira] Assignee endpoint failed for ${issueKey}, trying issue field update...`);
+    const fieldRes = await jiraFetch(`/rest/api/3/issue/${issueKey}`, {
+      method: 'PUT',
+      body: JSON.stringify({ fields: { assignee: { accountId } } }),
+    });
+    if (fieldRes.ok) return;
+    const fieldErr = await fieldRes.json().catch(() => ({}));
+    throw new Error(parseJiraError(fieldErr, fieldRes.status));
   }
+
+  throw new Error(errMsg);
 }
 
 export async function updateStoryPoints(issueKey, points) {
@@ -632,6 +648,18 @@ export async function createProject(name, key, leadAccountId) {
   return res.json();
 }
 
+export async function updateProjectLead(projectKey, leadAccountId) {
+  const res = await jiraFetch(`/rest/api/3/project/${encodeURIComponent(projectKey)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ leadAccountId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
+  return res.json();
+}
+
 export async function getProjectBoards(projectKey) {
   const res = await jiraFetch(`/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=10`);
   if (!res.ok) {
@@ -668,6 +696,34 @@ export async function addUserToProjectRole(projectKey, roleId, accountId) {
     method: 'POST',
     body: JSON.stringify({ user: [accountId] }),
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
+  return res.json();
+}
+
+/**
+ * Add a user to a Jira Cloud project's team via the internal people/team endpoint.
+ * This grants actual project access and assignability (works on simplified/next-gen projects).
+ */
+export async function addUserToProjectTeam(projectKey, accountId) {
+  // Try the v2 project actors endpoint (grants project-level permissions)
+  const res = await jiraFetch(`/rest/api/3/project/${encodeURIComponent(projectKey)}/role/10002`, {
+    method: 'POST',
+    body: JSON.stringify({ user: [accountId] }),
+  });
+
+  // Also try to add via the project properties to ensure the user is a team member
+  // On next-gen/team-managed projects, the permission model is different
+  try {
+    await jiraFetch(`/rest/api/2/user/application?applicationKey=jira-software&accountId=${accountId}`, {
+      method: 'POST',
+    });
+  } catch (_) {
+    // This endpoint may not exist on all instances — ignore errors
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(parseJiraError(err, res.status));

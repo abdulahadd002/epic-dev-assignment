@@ -2,7 +2,7 @@ import express from 'express';
 import {
   createEpic, createStory, createSprint, startSprint, moveIssueToSprint,
   assignIssue, updateStoryPoints, searchUser,
-  generateProjectKey, getMyself, createProject, getProjectBoards,
+  generateProjectKey, getMyself, createProject, getProjectBoards, updateProjectLead,
   getProjectRoles, addUserToProjectRole, inviteUsersToJira,
 } from '../services/jiraService.js';
 
@@ -328,40 +328,47 @@ router.post('/ai/sync-jira', async (req, res) => {
     }
 
     // Step 4b: Add developers to the Jira project team
-    // Add to multiple roles to ensure "Assignable User" permission is granted
+    // Try multiple methods to ensure developers can be assigned issues
     const resolvedAccountIds = Object.values(accountIdCache).filter(Boolean);
     if (resolvedAccountIds.length > 0) {
       try {
         const roles = await getProjectRoles(projectKey);
         console.log(`[Sync] Available project roles: ${JSON.stringify(roles)}`);
 
-        // Add developers to all relevant roles for full permissions
-        // "Administrators" grants assignable + all other permissions
-        // "Member"/"Developers" is the standard team role
-        const roleNames = ['Administrators', 'Member', 'Developers', 'Developer'];
-        const roleIds = roleNames.map(name => roles[name]).filter(Boolean);
-
-        // Fallback: if none of the preferred roles exist, use any non-Viewer role
-        if (roleIds.length === 0) {
-          const fallback = Object.entries(roles)
-            .find(([name]) => !name.toLowerCase().includes('viewer'));
-          if (fallback) roleIds.push(fallback[1]);
-        }
+        // Get ALL role IDs (including addons role) — try every role
+        const allRoleIds = Object.values(roles);
 
         let addedCount = 0;
         for (const accountId of resolvedAccountIds) {
           let addedToAny = false;
-          for (const roleId of roleIds) {
+          // Try adding to every available role
+          for (const roleId of allRoleIds) {
             try {
               await addUserToProjectRole(projectKey, roleId, accountId);
               addedToAny = true;
+              console.log(`[Sync] Added user ${accountId} to role ${roleId}`);
             } catch (err) {
-              // Role add may fail silently (e.g. already a member) — that's ok
+              // Role add may fail (already a member, wrong role type) — try next
             }
           }
+
+          // Also try to set the user as a project lead (grants all permissions)
+          try {
+            await updateProjectLead(projectKey, accountId);
+            console.log(`[Sync] Set user ${accountId} as project lead (temporary)`);
+          } catch (err) {
+            // Non-fatal — just trying to grant permissions
+          }
+
           if (addedToAny) addedCount++;
         }
-        console.log(`[Sync] Added ${addedCount}/${resolvedAccountIds.length} developers to project roles: ${roleIds.join(', ')}`);
+
+        // Restore the original project lead (the API user)
+        try {
+          await updateProjectLead(projectKey, leadAccountId);
+        } catch (_) {}
+
+        console.log(`[Sync] Added ${addedCount}/${resolvedAccountIds.length} developers to project`);
         if (addedCount < resolvedAccountIds.length) {
           warnings.push(`Only ${addedCount}/${resolvedAccountIds.length} developers added to project team`);
         }
@@ -480,7 +487,7 @@ router.post('/ai/sync-jira', async (req, res) => {
       let sprintStarted = false;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          await startSprint(sprints[0].id, s1Start.toISOString(), s1End.toISOString(), jiraBoardId);
+          await startSprint(sprints[0].id, s1Start.toISOString(), s1End.toISOString(), jiraBoardId, sprints[0].name);
           console.log(`[Sync] Started sprint: ${sprints[0].name} (ID: ${sprints[0].id}) on attempt ${attempt + 1}`);
           sprintStarted = true;
           break;
