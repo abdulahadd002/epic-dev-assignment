@@ -196,8 +196,7 @@ function EpicCard({
   cancelEpic, regenerateEpic, regenerateStory, regenerateAC, regenerateTestCase
 }) {
   return (
-    <motion.div
-      layout
+    <div
       className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all duration-300
         ${epic.approved ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-200'}`}
     >
@@ -468,6 +467,6 @@ function EpicCard({
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }

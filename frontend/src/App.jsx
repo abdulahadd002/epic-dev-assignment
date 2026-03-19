@@ -87,7 +87,7 @@ function SidebarLayout({ children }) {
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: '#f9fafb' }}>
       <Sidebar />
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" style={{ overflowAnchor: 'none' }}>
         {children}
       </div>
     </div>

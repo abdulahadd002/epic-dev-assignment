@@ -293,7 +293,6 @@ export default function AssignPage() {
                         : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                     }`}
                     whileTap={{ scale: 0.97 }}
-                    layout
                   >
                     <div className="relative flex-shrink-0">
                       {dev.avatar_url || dev.avatar ? (
