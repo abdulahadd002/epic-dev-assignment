@@ -1,8 +1,8 @@
 import express from 'express';
 import {
   createEpic, createStory, createSprint, startSprint, moveIssueToSprint,
-  assignIssue, updateStoryPoints, searchUser,
-  generateProjectKey, getMyself, createProject, getProjectBoards, updateProjectLead,
+  assignIssue, updateStoryPoints, searchUser, searchAssignableUser,
+  generateProjectKey, getMyself, createProject, getProjectBoards, updateProjectLead, updateProjectSettings,
   getProjectRoles, addUserToProjectRole, inviteUsersToJira,
 } from '../services/jiraService.js';
 
@@ -154,6 +154,14 @@ router.post('/ai/sync-jira', async (req, res) => {
     }
     if (!created) {
       throw new Error(`Could not create Jira project — all key variants for "${baseKey}" are taken`);
+    }
+
+    // Set assigneeType to UNASSIGNED so new issues aren't auto-assigned to the project lead
+    try {
+      await updateProjectSettings(projectKey, { assigneeType: 'UNASSIGNED' });
+      console.log(`[Sync] Set project ${projectKey} default assignee to UNASSIGNED`);
+    } catch (err) {
+      console.warn(`[Sync] Could not change assignee type: ${err.message}`);
     }
 
     // Discover the auto-created board for this project (retry with backoff)
@@ -378,6 +386,35 @@ router.post('/ai/sync-jira', async (req, res) => {
       }
     }
 
+    // Step 4c: Verify which developers are actually assignable in this project
+    // (users may exist in Jira but lack product access or project permissions)
+    const assignableCache = {};
+    for (const [username, accountId] of Object.entries(accountIdCache)) {
+      try {
+        const assignable = await searchAssignableUser(username, projectKey);
+        const match = assignable.find(u => u.accountId === accountId);
+        if (match) {
+          assignableCache[username] = accountId;
+          console.log(`[Sync] Verified ${username} is assignable in project ${projectKey}`);
+        } else {
+          // Try searching by account ID directly
+          const byId = await searchAssignableUser(accountId, projectKey);
+          if (byId.length > 0) {
+            assignableCache[username] = accountId;
+            console.log(`[Sync] Verified ${username} is assignable (by accountId)`);
+          } else {
+            console.warn(`[Sync] ${username} exists in Jira but is NOT assignable in project ${projectKey} — they may need to accept their Jira invitation`);
+            warnings.push(`${username} cannot be assigned issues — they may need to accept their Jira invitation first`);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Sync] Could not verify assignability for ${username}: ${err.message}`);
+        // Still try to assign — it might work
+        assignableCache[username] = accountId;
+      }
+    }
+    console.log(`[Sync] Assignable developers: ${Object.keys(assignableCache).join(', ') || 'none'}`);
+
     // Step 5: Create epics and stories, assign devs, set story points
     const results = [];
     const allCreatedStories = []; // { key, storyPoints, epicIdx }
@@ -392,8 +429,8 @@ router.post('/ai/sync-jira', async (req, res) => {
 
       // Assign developer to epic
       const epicDevUsername = epicAssignmentMap[epic.id];
-      if (epicDevUsername && accountIdCache[epicDevUsername]) {
-        try { await assignIssue(epicKey, accountIdCache[epicDevUsername]); } catch (err) {
+      if (epicDevUsername && assignableCache[epicDevUsername]) {
+        try { await assignIssue(epicKey, assignableCache[epicDevUsername]); } catch (err) {
           assignmentFailures++;
           console.warn(`[Sync] Could not assign ${epicKey} to ${epicDevUsername}: ${err.message}`);
         }
@@ -421,8 +458,8 @@ router.post('/ai/sync-jira', async (req, res) => {
 
         // Assign developer — story-level first, fall back to epic-level
         const storyDevUsername = storyAssignmentMap[story.id] || epicDevUsername;
-        if (storyDevUsername && accountIdCache[storyDevUsername]) {
-          try { await assignIssue(createdStory.key, accountIdCache[storyDevUsername]); } catch (err) {
+        if (storyDevUsername && assignableCache[storyDevUsername]) {
+          try { await assignIssue(createdStory.key, assignableCache[storyDevUsername]); } catch (err) {
             assignmentFailures++;
             console.warn(`[Sync] Could not assign ${createdStory.key} to ${storyDevUsername}: ${err.message}`);
           }

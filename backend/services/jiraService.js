@@ -585,23 +585,32 @@ export async function searchUser(query) {
     throw new Error(parseJiraError(err, res.status));
   }
   const users = await res.json();
-  // Filter to active users only
   const activeUsers = users.filter(u => u.active !== false);
 
-  // Prioritize exact email matches — Jira's search is fuzzy and may return
-  // irrelevant users when searching by GitHub username
   const lowerQuery = query.toLowerCase();
   activeUsers.sort((a, b) => {
     const aEmail = (a.emailAddress || '').toLowerCase() === lowerQuery ? -1 : 0;
     const bEmail = (b.emailAddress || '').toLowerCase() === lowerQuery ? -1 : 0;
     if (aEmail !== bEmail) return aEmail - bEmail;
-    // Then prefer exact displayName match
     const aName = (a.displayName || '').toLowerCase() === lowerQuery ? -1 : 0;
     const bName = (b.displayName || '').toLowerCase() === lowerQuery ? -1 : 0;
     return aName - bName;
   });
 
   return activeUsers;
+}
+
+/**
+ * Search for users who can be assigned issues in a specific project.
+ * Returns only users with proper Jira product access + project permissions.
+ */
+export async function searchAssignableUser(query, projectKey) {
+  const res = await jiraFetch(
+    `/rest/api/3/user/assignable/search?query=${encodeURIComponent(query)}&project=${encodeURIComponent(projectKey)}&maxResults=10`
+  );
+  if (!res.ok) return [];
+  const users = await res.json();
+  return users.filter(u => u.active !== false);
 }
 
 // ─── Project Management ─────────────────────────────────────────────────────
@@ -652,6 +661,21 @@ export async function updateProjectLead(projectKey, leadAccountId) {
   const res = await jiraFetch(`/rest/api/3/project/${encodeURIComponent(projectKey)}`, {
     method: 'PUT',
     body: JSON.stringify({ leadAccountId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
+  return res.json();
+}
+
+/**
+ * Update project settings (e.g., assigneeType: 'UNASSIGNED' or 'PROJECT_LEAD').
+ */
+export async function updateProjectSettings(projectKey, settings) {
+  const res = await jiraFetch(`/rest/api/3/project/${encodeURIComponent(projectKey)}`, {
+    method: 'PUT',
+    body: JSON.stringify(settings),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
