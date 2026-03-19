@@ -100,16 +100,6 @@ function calculateConfidence(topScore, secondScore, hasExpertiseMatch, epicClass
 }
 
 /**
- * Auto-assign epics to developers using multi-factor scoring algorithm (legacy)
- * @param {Array} epics - Approved epics with user stories
- * @param {Array} developers - Analyzed developers with expertise and experience
- * @returns {Object} Assignment results with workload distribution
- */
-export async function autoAssignEpics(epics, developers) {
-  return autoAssignStories(epics, developers);
-}
-
-/**
  * Auto-assign individual stories to developers using multi-factor scoring.
  * Each story is classified via its parent epic, then scored and assigned independently.
  * @param {Array} epics - Approved epics with user stories
@@ -263,6 +253,3 @@ export function reassignStory(assignments, storyId, newDeveloperUsername, worklo
     workloadDistribution
   };
 }
-
-// Keep legacy name for backward compat
-export const reassignEpic = reassignStory;
