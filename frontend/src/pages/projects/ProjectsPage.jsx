@@ -1,9 +1,31 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useProjects } from '../../hooks/useProjects';
 import { useTemplates } from '../../hooks/useTemplates';
-import { PlusCircle, FolderKanban, Trash2, Clock, Users, BookOpen, CheckCircle2, AlertTriangle, ArrowRight, Zap, Calendar, Copy, FileStack, X } from 'lucide-react';
+import { PlusCircle, FolderKanban, Trash2, Clock, Users, BookOpen, CheckCircle2, AlertTriangle, ArrowRight, Zap, Calendar, Copy, FileStack, X, TrendingUp, Target, Layers, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+function MiniStat({ icon: Icon, value, label, color = 'gray' }) {
+  const colorMap = {
+    gray: 'text-gray-500 bg-gray-50',
+    teal: 'text-teal-600 bg-teal-50',
+    emerald: 'text-emerald-600 bg-emerald-50',
+    blue: 'text-blue-600 bg-blue-50',
+    amber: 'text-amber-600 bg-amber-50',
+    purple: 'text-purple-600 bg-purple-50',
+  };
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-4 py-3">
+      <div className={`rounded-lg p-1.5 ${colorMap[color]}`}>
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+      <div>
+        <p className="text-sm font-bold text-gray-900">{value}</p>
+        <p className="text-[10px] text-gray-400">{label}</p>
+      </div>
+    </div>
+  );
+}
 
 const statusConfig = {
   'epics-ready': { label: 'Epics Ready', color: 'bg-blue-100 text-blue-700', icon: BookOpen, step: 1 },
@@ -132,6 +154,26 @@ export default function ProjectsPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [templateSaved, setTemplateSaved] = useState(null);
 
+  const aggregateStats = useMemo(() => {
+    const total = projects.length;
+    if (total === 0) return null;
+
+    const active = projects.filter(p => p.status === 'synced').length;
+    const completed = projects.filter(p => p.status === 'completed').length;
+    const totalPoints = projects.reduce((s, p) =>
+      s + (p.epics?.reduce((se, e) => se + (e.stories?.reduce((ss, st) => ss + (st.storyPoints || 0), 0) || 0), 0) || 0), 0);
+
+    const withMetrics = projects.filter(p => p.completionMetrics);
+    const successRate = withMetrics.length > 0
+      ? Math.round((withMetrics.filter(p => p.completionMetrics.onTime).length / withMetrics.length) * 100)
+      : null;
+    const avgVelocity = withMetrics.length > 0
+      ? parseFloat((withMetrics.reduce((s, p) => s + (p.completionMetrics.velocity || 0), 0) / withMetrics.length).toFixed(1))
+      : null;
+
+    return { total, active, completed, totalPoints, successRate, avgVelocity };
+  }, [projects]);
+
   const handleSaveAsTemplate = (e, project) => {
     e.preventDefault();
     e.stopPropagation();
@@ -245,6 +287,22 @@ export default function ProjectsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Aggregate Stats Bar */}
+      {aggregateStats && (
+        <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          <MiniStat icon={FolderKanban} value={aggregateStats.total} label="Total Projects" color="gray" />
+          <MiniStat icon={Zap} value={aggregateStats.active} label="Active (Synced)" color="teal" />
+          <MiniStat icon={Trophy} value={aggregateStats.completed} label="Completed" color="emerald" />
+          <MiniStat icon={Layers} value={aggregateStats.totalPoints} label="Total Points" color="purple" />
+          {aggregateStats.successRate !== null && (
+            <MiniStat icon={Target} value={`${aggregateStats.successRate}%`} label="Success Rate" color="blue" />
+          )}
+          {aggregateStats.avgVelocity !== null && (
+            <MiniStat icon={TrendingUp} value={aggregateStats.avgVelocity} label="Avg Velocity" color="amber" />
+          )}
+        </div>
+      )}
 
       {projects.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-white py-20 text-center">

@@ -5,8 +5,10 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   FolderOpen, Users, BookOpen, Layers, CheckCircle2, Clock, AlertTriangle,
-  TrendingUp, BarChart3, ExternalLink, GitBranch, Target, Zap, Activity, Gauge
+  TrendingUp, BarChart3, ExternalLink, GitBranch, Target, Zap, Activity, Gauge,
+  Trophy, Timer
 } from 'lucide-react';
+import { useRetro } from '../../hooks/useRetro';
 
 function StatCard({ icon: Icon, label, value, sub, color = 'blue' }) {
   const colorMap = {
@@ -39,12 +41,14 @@ function ProjectCard({ project }) {
     'stories-ready': 'bg-purple-100 text-purple-700',
     assigned: 'bg-amber-100 text-amber-700',
     synced: 'bg-emerald-100 text-emerald-700',
+    completed: 'bg-teal-100 text-teal-700',
   };
   const statusLabels = {
     'epics-ready': 'Epics Ready',
     'stories-ready': 'Stories Ready',
     assigned: 'Assigned',
     synced: 'Synced to Jira',
+    completed: 'Completed',
   };
 
   const epicCount = project.epics?.length || 0;
@@ -115,6 +119,7 @@ function ProjectCard({ project }) {
 export default function Dashboard() {
   const { projects } = useProjects();
   const { developers } = useDevelopers();
+  const { retros } = useRetro();
 
   const stats = useMemo(() => {
     let totalEpics = 0, totalStories = 0, totalPoints = 0, totalAssignments = 0;
@@ -222,6 +227,80 @@ export default function Dashboard() {
   );
 
   const syncedProjects = useMemo(() => projects.filter(p => p.status === 'synced'), [projects]);
+
+  // Completed project analytics
+  const completedAnalytics = useMemo(() => {
+    const completed = projects.filter(p => p.status === 'completed' && p.completionMetrics);
+    if (completed.length === 0) return null;
+
+    const count = completed.length;
+    const onTimeCount = completed.filter(p => p.completionMetrics.onTime).length;
+    const successRate = Math.round((onTimeCount / count) * 100);
+
+    const velocities = completed.map(p => p.completionMetrics.velocity || 0);
+    const avgVelocity = parseFloat((velocities.reduce((s, v) => s + v, 0) / count).toFixed(1));
+
+    const accuracies = completed.filter(p => p.completionMetrics.estimationAccuracy != null)
+      .map(p => p.completionMetrics.estimationAccuracy);
+    const avgAccuracy = accuracies.length > 0
+      ? Math.round(accuracies.reduce((s, a) => s + a, 0) / accuracies.length)
+      : null;
+
+    const durations = completed.map(p => p.completionMetrics.actualDurationDays);
+    const avgDuration = Math.round(durations.reduce((s, d) => s + d, 0) / count);
+
+    // Per-project data for charts
+    const perProject = completed.map(p => ({
+      name: p.name.length > 15 ? p.name.slice(0, 15) + '…' : p.name,
+      velocity: p.completionMetrics.velocity || 0,
+      accuracy: p.completionMetrics.estimationAccuracy || 0,
+      onTime: p.completionMetrics.onTime,
+    }));
+
+    // Top contributors across completed projects
+    const contributorMap = {};
+    for (const p of completed) {
+      const m = p.completionMetrics;
+      for (const dev of (m.team || [])) {
+        if (!contributorMap[dev]) contributorMap[dev] = { projects: 0, stories: 0, points: 0 };
+        contributorMap[dev].projects++;
+      }
+      // Sum delivered stories/points per dev from assignments
+      for (const a of (p.assignments || [])) {
+        const dev = a.assigned_developer;
+        if (dev && contributorMap[dev]) {
+          contributorMap[dev].stories++;
+          contributorMap[dev].points += a.story_points || a.storyPoints || 0;
+        }
+      }
+    }
+    const topContributors = Object.entries(contributorMap)
+      .map(([username, data]) => ({ username, ...data }))
+      .sort((a, b) => b.points - a.points)
+      .slice(0, 5);
+
+    return { count, successRate, avgVelocity, avgAccuracy, avgDuration, perProject, topContributors };
+  }, [projects]);
+
+  // Retro insights from completed projects
+  const retroInsights = useMemo(() => {
+    if (!completedAnalytics) return null;
+    const completedIds = projects.filter(p => p.status === 'completed').map(p => p.id);
+    const wentWell = [];
+    const toImprove = [];
+    const actionItems = [];
+
+    for (const id of completedIds) {
+      const r = retros[id];
+      if (!r) continue;
+      wentWell.push(...(r.wentWell || []));
+      toImprove.push(...(r.toImprove || []));
+      actionItems.push(...(r.actionItems || []));
+    }
+
+    if (wentWell.length === 0 && toImprove.length === 0 && actionItems.length === 0) return null;
+    return { wentWell: wentWell.slice(0, 3), toImprove: toImprove.slice(0, 3), actionItems: actionItems.slice(0, 3) };
+  }, [projects, retros, completedAnalytics]);
 
   const assignmentRate = stats.totalStories > 0
     ? Math.round((stats.totalAssignments / stats.totalStories) * 100)
@@ -431,6 +510,179 @@ export default function Dashboard() {
               Distribution of story point estimates across all {stats.totalStories} stories
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Completed Projects Insights */}
+      {completedAnalytics && (
+        <div className="mb-6 space-y-4">
+          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-amber-500" />
+            Completed Projects Insights
+          </h2>
+
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard icon={Trophy} label="Completed" value={completedAnalytics.count} sub="projects finished" color="amber" />
+            <StatCard icon={Target} label="Success Rate" value={`${completedAnalytics.successRate}%`} sub="delivered on time" color="green" />
+            <StatCard icon={TrendingUp} label="Avg Velocity" value={`${completedAnalytics.avgVelocity}`} sub="pts/week" color="blue" />
+            <StatCard icon={Timer} label="Avg Duration" value={`${completedAnalytics.avgDuration}d`} sub="days to complete" color="purple" />
+          </div>
+
+          {/* Charts row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Velocity per project */}
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                <TrendingUp className="h-3.5 w-3.5 text-blue-500" />
+                Velocity by Project (pts/week)
+              </h3>
+              <div className="space-y-2">
+                {completedAnalytics.perProject.map((p, i) => {
+                  const maxV = Math.max(...completedAnalytics.perProject.map(x => x.velocity), 1);
+                  return (
+                    <div key={i}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[11px] text-gray-600 truncate flex-1">{p.name}</span>
+                        <span className="text-[11px] font-mono text-gray-500 ml-2">{p.velocity}</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <motion.div
+                          className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(p.velocity / maxV) * 100}%` }}
+                          transition={{ duration: 0.5, delay: i * 0.08 }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Estimation accuracy per project */}
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                <Gauge className="h-3.5 w-3.5 text-teal-500" />
+                Estimation Accuracy by Project (%)
+              </h3>
+              <div className="space-y-2">
+                {completedAnalytics.perProject.map((p, i) => (
+                  <div key={i}>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[11px] text-gray-600 truncate flex-1">{p.name}</span>
+                      <span className={`text-[11px] font-mono ${p.accuracy >= 80 ? 'text-emerald-600' : p.accuracy >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                        {p.accuracy}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className={`h-full rounded-full ${p.accuracy >= 80 ? 'bg-emerald-500' : p.accuracy >= 50 ? 'bg-amber-500' : 'bg-red-400'}`}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(p.accuracy, 100)}%` }}
+                        transition={{ duration: 0.5, delay: i * 0.08 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Top Contributors */}
+          {completedAnalytics.topContributors.length > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-amber-500" />
+                Top Contributors (Completed Projects)
+              </h3>
+              <div className="space-y-2">
+                {completedAnalytics.topContributors.map((dev, i) => {
+                  const rosterDev = developers.find(d => d.username === dev.username);
+                  const maxPts = completedAnalytics.topContributors[0]?.points || 1;
+                  return (
+                    <motion.div
+                      key={dev.username}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      className="flex items-center gap-2"
+                    >
+                      {rosterDev?.avatar_url || rosterDev?.avatar ? (
+                        <img src={rosterDev.avatar_url || rosterDev.avatar} className="h-6 w-6 rounded-full flex-shrink-0" alt="" />
+                      ) : (
+                        <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-500 flex-shrink-0">
+                          {dev.username[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-medium text-gray-700 truncate">{dev.username}</span>
+                          <span className="text-[10px] text-gray-400 flex-shrink-0 ml-1">
+                            {dev.projects} {dev.projects === 1 ? 'project' : 'projects'} · {dev.stories} stories · {dev.points} SP
+                          </span>
+                        </div>
+                        <div className="h-1 w-full rounded-full bg-gray-100 mt-1">
+                          <div className="h-full rounded-full bg-amber-400" style={{ width: `${(dev.points / maxPts) * 100}%` }} />
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Retro Highlights */}
+          {retroInsights && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                <Activity className="h-3.5 w-3.5 text-indigo-500" />
+                Retrospective Highlights
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {retroInsights.wentWell.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 mb-1.5">Went Well</p>
+                    <ul className="space-y-1">
+                      {retroInsights.wentWell.map((item, i) => (
+                        <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-400 mt-0.5 flex-shrink-0" />
+                          <span className="line-clamp-2">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {retroInsights.toImprove.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 mb-1.5">To Improve</p>
+                    <ul className="space-y-1">
+                      {retroInsights.toImprove.map((item, i) => (
+                        <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
+                          <AlertTriangle className="h-3 w-3 text-amber-400 mt-0.5 flex-shrink-0" />
+                          <span className="line-clamp-2">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {retroInsights.actionItems.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600 mb-1.5">Action Items</p>
+                    <ul className="space-y-1">
+                      {retroInsights.actionItems.map((item, i) => (
+                        <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
+                          <Zap className="h-3 w-3 text-blue-400 mt-0.5 flex-shrink-0" />
+                          <span className="line-clamp-2">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

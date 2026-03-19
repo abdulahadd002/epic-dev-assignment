@@ -9,7 +9,7 @@ import {
   ArrowLeft, ArrowRight, Columns3, Users, BookOpen, CheckCircle2, Clock, AlertTriangle,
   TrendingUp, TrendingDown, BarChart3, ChevronDown, ExternalLink, RefreshCw,
   Target, Layers, GitBranch, Activity, Calendar, Shield, Flame, Bug,
-  ClipboardCheck, UserPlus, LayoutDashboard, FileText, GripVertical
+  ClipboardCheck, UserPlus, LayoutDashboard, FileText, GripVertical, Trophy
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
@@ -24,6 +24,7 @@ import SprintCompletionBanner from '../../components/projects/SprintCompletionBa
 import SprintCompletionModal from '../../components/projects/SprintCompletionModal';
 import { useSprintCompletion } from '../../hooks/useSprintCompletion';
 import { buildSprintReport } from '../../utils/buildSprintReport';
+import { buildCompletionMetrics } from '../../utils/completionMetrics';
 
 const statusConfig = {
   'epics-ready': { label: 'Epics Ready', color: 'bg-blue-100 text-blue-700' },
@@ -642,6 +643,94 @@ function DeveloperTiles({ project }) {
   );
 }
 
+function CompletedProjectSummary({ project }) {
+  const m = project.completionMetrics;
+  if (!m) return null;
+
+  const completedDate = m.completedAt
+    ? new Date(m.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="rounded-lg bg-emerald-100 p-2">
+            <Trophy className="h-5 w-5 text-emerald-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-emerald-800">Project Complete</h3>
+            {completedDate && <p className="text-xs text-emerald-600">Completed {completedDate}</p>}
+          </div>
+        </div>
+        {m.onTime !== null && (
+          <span className={`rounded-full px-3 py-1 text-xs font-medium ${
+            m.onTime ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+          }`}>
+            {m.onTime ? 'On Time' : `Delayed ${m.delayDays}d`}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="rounded-lg bg-white/60 px-3 py-2">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Duration</div>
+          <div className="text-sm font-bold text-gray-900">{m.actualDurationDays}d</div>
+          {m.plannedDurationDays && <div className="text-[10px] text-gray-400">of {m.plannedDurationDays}d planned</div>}
+        </div>
+        <div className="rounded-lg bg-white/60 px-3 py-2">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Delivered</div>
+          <div className="text-sm font-bold text-gray-900">{m.deliveredPoints} pts</div>
+          <div className="text-[10px] text-gray-400">of {m.estimatedPoints} estimated</div>
+        </div>
+        <div className="rounded-lg bg-white/60 px-3 py-2">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Accuracy</div>
+          <div className="text-sm font-bold text-gray-900">{m.estimationAccuracy ?? '—'}%</div>
+        </div>
+        <div className="rounded-lg bg-white/60 px-3 py-2">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Velocity</div>
+          <div className="text-sm font-bold text-gray-900">{m.velocity} pts/wk</div>
+        </div>
+        <div className="rounded-lg bg-white/60 px-3 py-2">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Stories</div>
+          <div className="text-sm font-bold text-gray-900">{m.completedStories}/{m.totalStories}</div>
+        </div>
+        <div className="rounded-lg bg-white/60 px-3 py-2">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Health</div>
+          <div className={`text-sm font-bold ${
+            m.finalHealthScore?.level === 'healthy' ? 'text-emerald-600' :
+            m.finalHealthScore?.level === 'at-risk' ? 'text-amber-600' : 'text-red-600'
+          }`}>{m.finalHealthScore?.score ?? '—'}/100</div>
+        </div>
+      </div>
+
+      {/* Team */}
+      {project.analyzedDevelopers?.length > 0 && (
+        <div className="mt-4 flex items-center gap-2">
+          <span className="text-xs text-emerald-600 font-medium">Team:</span>
+          <div className="flex -space-x-2">
+            {project.analyzedDevelopers.slice(0, 6).map(dev => (
+              <img
+                key={dev.username}
+                src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
+                alt={dev.username}
+                title={dev.username}
+                className="w-7 h-7 rounded-full ring-2 ring-white"
+              />
+            ))}
+            {project.analyzedDevelopers.length > 6 && (
+              <div className="w-7 h-7 rounded-full bg-gray-200 ring-2 ring-white flex items-center justify-center text-[10px] font-medium text-gray-600">
+                +{project.analyzedDevelopers.length - 6}
+              </div>
+            )}
+          </div>
+          <span className="text-xs text-gray-500">{m.sprintCount} sprint{m.sprintCount !== 1 ? 's' : ''}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LocalProjectView({ project }) {
   const { updateProject } = useProjects();
   const totalEpics = project.epics?.length || 0;
@@ -831,18 +920,22 @@ function SyncedProjectView({ project }) {
     return buildSprintReport(issues, sprint, healthData);
   }, [issues, sprint, healthData]);
 
-  // After completion: update project in localStorage
+  // After completion: update project in localStorage with analytics metrics
   useEffect(() => {
     if (!completionResult) return;
     if (completionResult.isLastSprint) {
-      updateProject(project.id, { status: 'completed' });
+      const metrics = buildCompletionMetrics(project, jiraStats, healthData, completionReport);
+      updateProject(project.id, { status: 'completed', completionMetrics: metrics });
     } else if (completionResult.nextSprint) {
       updateProject(project.id, { jiraSprintId: completionResult.nextSprint.id });
     }
-  }, [completionResult, project.id, updateProject]);
+  }, [completionResult, project.id, updateProject, jiraStats, healthData, completionReport, project]);
 
   return (
     <div className="space-y-6">
+      {/* Completed Project Summary */}
+      {project.status === 'completed' && <CompletedProjectSummary project={project} />}
+
       {/* Sprint Completion Banner */}
       {showCompletionBanner && (
         <SprintCompletionBanner
