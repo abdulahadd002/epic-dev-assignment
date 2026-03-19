@@ -38,6 +38,46 @@ const chartTooltip = {
   itemStyle: { color: '#1f2937' }, labelStyle: { color: '#6b7280' }
 };
 
+function ProjectDescription({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  const MAX_LEN = 180;
+  const isLong = text.length > MAX_LEN;
+
+  return (
+    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/80 max-w-2xl">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 text-left group"
+      >
+        <span className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+          <FileText className="h-3.5 w-3.5" />
+          Project Description
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <p className="px-3.5 pb-3 text-sm text-gray-500 leading-relaxed whitespace-pre-wrap">{text}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {!expanded && isLong && (
+        <p className="px-3.5 pb-2.5 text-sm text-gray-400 truncate">{text.slice(0, MAX_LEN)}...</p>
+      )}
+      {!expanded && !isLong && (
+        <p className="px-3.5 pb-2.5 text-sm text-gray-500">{text}</p>
+      )}
+    </div>
+  );
+}
+
 function StatCard({ icon: Icon, label, value, subtext, color = 'text-gray-900' }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -1038,7 +1078,7 @@ function ProjectDetailPageInner() {
               )}
             </div>
             {(project.rawText || project.description) && (
-              <p className="mt-2 text-sm text-gray-500 max-w-2xl">{project.rawText || project.description}</p>
+              <ProjectDescription text={project.rawText || project.description} />
             )}
             <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
               <span>{project.epics?.length || 0} epics · {totalStories} stories · {totalPoints} points</span>
