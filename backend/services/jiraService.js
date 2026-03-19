@@ -204,8 +204,15 @@ export async function getProjectIssues(projectKey) {
   const { fieldList, spField } = await getIssueFieldList();
   // Escape project key for JQL safety
   const safeKey = projectKey.replace(/"/g, '\\"');
-  const jql = encodeURIComponent(`project = "${safeKey}" AND issuetype != Epic ORDER BY status ASC, key ASC`);
-  const res = await jiraFetch(`/rest/api/3/search?jql=${jql}&maxResults=200&fields=${fieldList}`);
+  const jql = `project = "${safeKey}" AND issuetype != Epic ORDER BY status ASC, key ASC`;
+  const res = await jiraFetch('/rest/api/3/search/jql', {
+    method: 'POST',
+    body: JSON.stringify({
+      jql,
+      maxResults: 200,
+      fields: fieldList.split(','),
+    }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(parseJiraError(err, res.status));
