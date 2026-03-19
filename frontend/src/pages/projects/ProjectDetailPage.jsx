@@ -1114,7 +1114,20 @@ function SyncedProjectView({ project }) {
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {project.analyzedDevelopers.map(dev => {
-              const devIssues = (issues || []).filter(i => i.assignee?.name === dev.username || i.assignee?.name === dev.login);
+              // Match issues by: Jira display name, email, accountId, or GitHub username
+              const jiraName = dev.jiraUsername || '';
+              const devIssues = (issues || []).filter(i => {
+                if (!i.assignee) return false;
+                const aName = (i.assignee.name || '').toLowerCase();
+                const aEmail = (i.assignee.emailAddress || '').toLowerCase();
+                const aId = i.assignee.accountId || '';
+                const uname = dev.username.toLowerCase();
+                const jira = jiraName.toLowerCase();
+                return aName === uname || aName === jira
+                  || (jira && aEmail === jira)
+                  || aName.includes(uname) || uname.includes(aName.split(' ')[0]?.toLowerCase() || '')
+                  || (aId && aId === dev.jiraAccountId);
+              });
               const devDone = devIssues.filter(i => {
                 const s = (i.status || '').toLowerCase();
                 return s.includes('done') || s.includes('closed') || s.includes('resolved');

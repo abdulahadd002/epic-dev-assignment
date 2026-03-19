@@ -99,7 +99,7 @@ export default function Step3_DeveloperAnalysis() {
   }, [projects]);
 
   const [showNewForm, setShowNewForm] = useState(false);
-  const [devInputs, setDevInputs] = useState([{ username: '', owner: '', repo: '' }]);
+  const [devInputs, setDevInputs] = useState([{ username: '', owner: '', repo: '', jiraEmail: '' }]);
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState('');
   const [error, setError] = useState(null);
@@ -132,7 +132,7 @@ export default function Step3_DeveloperAnalysis() {
   };
 
   const addDeveloperInput = () => {
-    setDevInputs([...devInputs, { username: '', owner: '', repo: '' }]);
+    setDevInputs([...devInputs, { username: '', owner: '', repo: '', jiraEmail: '' }]);
   };
 
   const removeDeveloperInput = (index) => {
@@ -205,16 +205,26 @@ export default function Step3_DeveloperAnalysis() {
       if (data.developers.length === 0 && alreadyInRoster.length === 0) {
         setError('No developers could be analyzed. Check usernames and try again.');
       } else {
+        // Merge Jira emails from the form inputs
+        const jiraMap = {};
+        for (const d of validInputs) {
+          if (d.jiraEmail?.trim()) jiraMap[d.username.trim()] = d.jiraEmail.trim();
+        }
+        const enriched = data.developers.map((dev) => ({
+          ...dev,
+          jiraUsername: jiraMap[dev.username] || dev.jiraUsername || '',
+        }));
+
         // Persist to roster so they appear on future visits
-        if (data.developers.length > 0) {
-          addToRoster(data.developers);
+        if (enriched.length > 0) {
+          addToRoster(enriched);
         }
         setFreshAnalyzed((prev) => {
           const seen = new Set(prev.map((d) => d.username));
-          const added = data.developers.filter((d) => !seen.has(d.username));
+          const added = enriched.filter((d) => !seen.has(d.username));
           return [...prev, ...added];
         });
-        setDevInputs([{ username: '', owner: '', repo: '' }]);
+        setDevInputs([{ username: '', owner: '', repo: '', jiraEmail: '' }]);
         setShowNewForm(false);
       }
     } catch (err) {
@@ -301,6 +311,7 @@ export default function Step3_DeveloperAnalysis() {
                       </div>
                       <span className="text-xs text-gray-400 truncate block">
                         {dev.primary_expertise || 'Full Stack'}
+                        {dev.jiraUsername ? ` · ${dev.jiraUsername}` : ''}
                       </span>
                       {workload.stories > 0 ? (
                         <span className="text-[10px] text-amber-600 font-medium mt-0.5 block">
@@ -387,6 +398,14 @@ export default function Step3_DeveloperAnalysis() {
                     placeholder="Repository (optional)"
                     value={dev.repo}
                     onChange={(e) => updateDeveloperInput(index, 'repo', e.target.value)}
+                    className={inputCls + " flex-1"}
+                    disabled={loading}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Jira Email (optional)"
+                    value={dev.jiraEmail}
+                    onChange={(e) => updateDeveloperInput(index, 'jiraEmail', e.target.value)}
                     className={inputCls + " flex-1"}
                     disabled={loading}
                   />
@@ -486,6 +505,15 @@ export default function Step3_DeveloperAnalysis() {
                           {isFromRoster && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-teal-100 text-teal-700">
                               From Roster
+                            </span>
+                          )}
+                          {dev.jiraUsername ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-50 text-blue-600">
+                              Jira: {dev.jiraUsername}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-50 text-amber-600">
+                              No Jira email
                             </span>
                           )}
                           {dev.analysis?.experienceLevel && (

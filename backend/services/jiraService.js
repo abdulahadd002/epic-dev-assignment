@@ -135,7 +135,7 @@ function mapIssue(issue, spField) {
     issueType: f.issuetype?.name || 'Story',
     priority: f.priority?.name || 'Medium',
     assignee: f.assignee
-      ? { name: f.assignee.displayName, avatarUrl: f.assignee.avatarUrls?.['48x48'] }
+      ? { name: f.assignee.displayName, accountId: f.assignee.accountId, emailAddress: f.assignee.emailAddress || null, avatarUrl: f.assignee.avatarUrls?.['48x48'] }
       : null,
     storyPoints: extractStoryPoints(f, spField),
     labels: f.labels || [],

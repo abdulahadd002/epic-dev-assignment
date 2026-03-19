@@ -4,7 +4,7 @@ import { WorkflowProvider, useWorkflow } from '../../context/WorkflowContext';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useProjects } from '../../hooks/useProjects';
 import { useDevelopers } from '../../hooks/useDevelopers';
-import { Clock, Calendar, Upload, Loader2, CheckCircle2, AlertCircle, Pencil, Zap, Hash } from 'lucide-react';
+import { Clock, Calendar, Upload, Loader2, CheckCircle2, AlertCircle, Pencil, Zap, Hash, Users, Mail } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 
 import ProgressStepper from '../../components/shared/ProgressStepper';
@@ -95,6 +95,7 @@ function WizardContent() {
   const [syncError, setSyncError] = useState('');
   const [saving, setSaving] = useState(false);
   const [sprintCount, setSprintCount] = useState('');
+  const [jiraEmails, setJiraEmails] = useState({});
 
   // Compute total stories and points from approved epics
   const { totalStories, totalPoints } = (() => {
@@ -200,7 +201,8 @@ function WizardContent() {
           sprintCount: parseInt(sprintCount) || 1,
           projectName: name,
           developerJiraMap: developers.reduce((map, d) => {
-            const jira = d.jiraUsername || rosterDevs.find((r) => r.username === d.username)?.jiraUsername;
+            // Priority: user-edited override > developer object > roster
+            const jira = jiraEmails[d.username] || d.jiraUsername || rosterDevs.find((r) => r.username === d.username)?.jiraUsername;
             if (jira) map[d.username] = jira;
             return map;
           }, {}),
@@ -227,7 +229,14 @@ function WizardContent() {
         };
       });
 
-      if (developers.length > 0) addDevelopers(developers);
+      // Persist developers with any edited Jira emails to the roster
+      if (developers.length > 0) {
+        const devsWithJira = developers.map(d => ({
+          ...d,
+          jiraUsername: jiraEmails[d.username] || d.jiraUsername || rosterDevs.find(r => r.username === d.username)?.jiraUsername || '',
+        }));
+        addDevelopers(devsWithJira);
+      }
 
       const projectId = Date.now().toString();
       addProject({
@@ -267,7 +276,13 @@ function WizardContent() {
     const epics = transformEpicsForProject(generatedEpics);
     const flatAssignments = transformAssignmentsForProject(assignments);
 
-    if (developers.length > 0) addDevelopers(developers);
+    if (developers.length > 0) {
+      const devsWithJira = developers.map(d => ({
+        ...d,
+        jiraUsername: jiraEmails[d.username] || d.jiraUsername || rosterDevs.find(r => r.username === d.username)?.jiraUsername || '',
+      }));
+      addDevelopers(devsWithJira);
+    }
 
     const projectId = Date.now().toString();
     addProject({
@@ -408,6 +423,61 @@ function WizardContent() {
                           <div className="text-gray-400">{sp.days} days</div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Jira Team Mapping */}
+              {developers.length > 0 && (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                  <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-1">
+                    <Users className="h-4 w-4 text-teal-500" />
+                    Jira Team Mapping
+                  </h3>
+                  <p className="text-xs text-gray-400 mb-4">
+                    Map each developer to their Jira account email so tasks can be assigned correctly. Without this, Jira assignment will fail silently.
+                  </p>
+                  <div className="space-y-2">
+                    {developers.map((dev) => {
+                      const rosterJira = rosterDevs.find(r => r.username === dev.username)?.jiraUsername || '';
+                      const currentValue = jiraEmails[dev.username] ?? dev.jiraUsername ?? rosterJira;
+                      const hasJira = !!(jiraEmails[dev.username] || dev.jiraUsername || rosterJira);
+                      return (
+                        <div key={dev.username} className="flex items-center gap-3">
+                          <img
+                            src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
+                            alt={dev.username}
+                            className="w-8 h-8 rounded-lg ring-1 ring-gray-200 flex-shrink-0"
+                          />
+                          <span className="text-sm font-medium text-gray-900 w-36 truncate flex-shrink-0">{dev.username}</span>
+                          <div className="flex-1 flex items-center gap-2">
+                            <Mail className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
+                            <input
+                              type="text"
+                              value={currentValue}
+                              onChange={(e) => setJiraEmails(prev => ({ ...prev, [dev.username]: e.target.value }))}
+                              placeholder="Jira email (e.g. john@company.com)"
+                              className="flex-1 rounded-lg border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-3 py-2 text-sm
+                                         focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                            />
+                          </div>
+                          {hasJira ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                          ) : (
+                            <AlertCircle className="h-4 w-4 text-amber-400 flex-shrink-0" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {developers.some(d => {
+                    const rosterJira = rosterDevs.find(r => r.username === d.username)?.jiraUsername || '';
+                    return !(jiraEmails[d.username] || d.jiraUsername || rosterJira);
+                  }) && (
+                    <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                      <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                      Developers without Jira emails won't be assigned to tasks or added to the Jira project team.
                     </div>
                   )}
                 </div>
