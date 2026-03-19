@@ -10,6 +10,7 @@ const statusConfig = {
   'stories-ready': { label: 'Stories Ready', color: 'bg-purple-100 text-purple-700', icon: BookOpen, step: 2 },
   assigned: { label: 'Assigned', color: 'bg-amber-100 text-amber-700', icon: Users, step: 3 },
   synced: { label: 'Synced to Jira', color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2, step: 4 },
+  completed: { label: 'Completed', color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2, step: 5 },
 };
 
 function getProjectProgress(project) {
@@ -20,6 +21,20 @@ function getProjectProgress(project) {
   const approvedEpics = project.epics?.filter(e => e.status === 'approved').length || 0;
   const devCount = project.analyzedDevelopers?.length || project.assignments?.length || 0;
   const assignmentCount = project.assignments?.length || 0;
+
+  // Completed projects always show 100%
+  if (project.status === 'completed') {
+    const jp = project.jiraProgress;
+    return {
+      totalEpics, totalStories, totalPoints, approvedEpics,
+      doneStories: jp?.done || totalStories,
+      donePoints: jp?.donePoints || totalPoints,
+      inProgress: 0, todo: 0,
+      jiraTotal: jp?.total || totalStories,
+      jiraTotalPoints: jp?.totalPoints || totalPoints,
+      devCount, assignmentCount, progressPct: 100,
+    };
+  }
 
   // For synced projects with Jira progress data, use live stats
   const jp = project.jiraProgress;

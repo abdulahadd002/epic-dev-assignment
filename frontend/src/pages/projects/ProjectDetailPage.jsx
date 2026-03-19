@@ -20,12 +20,17 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import StoryDependencies from '../../components/projects/StoryDependencies';
 import SprintRetro from '../../components/projects/SprintRetro';
+import SprintCompletionBanner from '../../components/projects/SprintCompletionBanner';
+import SprintCompletionModal from '../../components/projects/SprintCompletionModal';
+import { useSprintCompletion } from '../../hooks/useSprintCompletion';
+import { buildSprintReport } from '../../utils/buildSprintReport';
 
 const statusConfig = {
   'epics-ready': { label: 'Epics Ready', color: 'bg-blue-100 text-blue-700' },
   'stories-ready': { label: 'Stories Ready', color: 'bg-purple-100 text-purple-700' },
   assigned: { label: 'Assigned', color: 'bg-amber-100 text-amber-700' },
   synced: { label: 'Synced to Jira', color: 'bg-emerald-100 text-emerald-700' },
+  completed: { label: 'Completed', color: 'bg-emerald-100 text-emerald-700' },
 };
 
 const chartTooltip = {
@@ -773,8 +778,50 @@ function SyncedProjectView({ project }) {
     return { dailyRate: dailyRate.toFixed(1), daysToFinish, sprintDays, elapsed };
   }, [sprint, jiraStats]);
 
+  // ─── Sprint Completion ───────────────────────────────────────────────────
+  const {
+    allDone, showCompletionBanner, showCompletionModal, setShowCompletionModal,
+    setCompletionDismissed, completing, completionResult, completionError, completeSprint,
+  } = useSprintCompletion({ issues, sprint, project });
+
+  const completionReport = useMemo(() => {
+    if (!issues || issues.length === 0) return null;
+    return buildSprintReport(issues, sprint, healthData);
+  }, [issues, sprint, healthData]);
+
+  // After completion: update project in localStorage
+  useEffect(() => {
+    if (!completionResult) return;
+    if (completionResult.isLastSprint) {
+      updateProject(project.id, { status: 'completed' });
+    } else if (completionResult.nextSprint) {
+      updateProject(project.id, { jiraSprintId: completionResult.nextSprint.id });
+    }
+  }, [completionResult, project.id, updateProject]);
+
   return (
     <div className="space-y-6">
+      {/* Sprint Completion Banner */}
+      {showCompletionBanner && (
+        <SprintCompletionBanner
+          stats={jiraStats}
+          onComplete={() => setShowCompletionModal(true)}
+          onDismiss={() => setCompletionDismissed(true)}
+          isMultiSprint={(project.sprintCount || 1) > 1}
+        />
+      )}
+
+      {/* Sprint Completion Modal */}
+      <SprintCompletionModal
+        report={completionReport}
+        isOpen={showCompletionModal}
+        onClose={() => setShowCompletionModal(false)}
+        onComplete={completeSprint}
+        completing={completing}
+        completionResult={completionResult}
+        completionError={completionError}
+      />
+
       {/* Velocity Banner */}
       {velocityInfo && velocityInfo.daysToFinish !== null && (
         <div className="rounded-xl bg-gradient-to-r from-teal-50 to-blue-50 border border-teal-200 p-4 flex items-center justify-between">
@@ -1170,7 +1217,7 @@ function ProjectDetailPageInner() {
       </div>
 
       {/* Content: different view for synced vs non-synced */}
-      {project.status === 'synced' && project.jiraSprintId ? (
+      {(project.status === 'synced' || project.status === 'completed') && project.jiraSprintId ? (
         <SyncedProjectView project={project} />
       ) : (
         <LocalProjectView project={project} />
