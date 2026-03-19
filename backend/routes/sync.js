@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   createEpic, createStory, createSprint, startSprint, moveIssueToSprint,
-  updateStoryPoints, searchUser,
+  assignIssue, updateStoryPoints, searchUser,
   generateProjectKey, getMyself, createProject, getProjectBoards,
   getProjectRoles, addUserToProjectRole, inviteUsersToJira,
 } from '../services/jiraService.js';
@@ -327,31 +327,43 @@ router.post('/ai/sync-jira', async (req, res) => {
       warnings.push(`Fuzzy-matched developers (verify these are correct): ${fuzzyMatches.join('; ')}`);
     }
 
-    // Step 4b: Add developers to the Jira project team (Member role)
+    // Step 4b: Add developers to the Jira project team
+    // Add to multiple roles to ensure "Assignable User" permission is granted
     const resolvedAccountIds = Object.values(accountIdCache).filter(Boolean);
     if (resolvedAccountIds.length > 0) {
       try {
         const roles = await getProjectRoles(projectKey);
-        // Prefer "Member" role, fall back to "Developers", then any non-admin role
-        const roleId = roles['Member'] || roles['Developers'] || roles['Developer']
-          || Object.entries(roles).find(([name]) => !name.toLowerCase().includes('admin'))?.[1];
-        if (roleId) {
-          let addedCount = 0;
-          for (const accountId of resolvedAccountIds) {
+        console.log(`[Sync] Available project roles: ${JSON.stringify(roles)}`);
+
+        // Add developers to all relevant roles for full permissions
+        // "Administrators" grants assignable + all other permissions
+        // "Member"/"Developers" is the standard team role
+        const roleNames = ['Administrators', 'Member', 'Developers', 'Developer'];
+        const roleIds = roleNames.map(name => roles[name]).filter(Boolean);
+
+        // Fallback: if none of the preferred roles exist, use any non-Viewer role
+        if (roleIds.length === 0) {
+          const fallback = Object.entries(roles)
+            .find(([name]) => !name.toLowerCase().includes('viewer'));
+          if (fallback) roleIds.push(fallback[1]);
+        }
+
+        let addedCount = 0;
+        for (const accountId of resolvedAccountIds) {
+          let addedToAny = false;
+          for (const roleId of roleIds) {
             try {
               await addUserToProjectRole(projectKey, roleId, accountId);
-              addedCount++;
+              addedToAny = true;
             } catch (err) {
-              console.warn(`[Sync] Could not add user to project role: ${err.message}`);
+              // Role add may fail silently (e.g. already a member) — that's ok
             }
           }
-          console.log(`[Sync] Added ${addedCount}/${resolvedAccountIds.length} developers to project team`);
-          if (addedCount < resolvedAccountIds.length) {
-            warnings.push(`Only ${addedCount}/${resolvedAccountIds.length} developers added to project team`);
-          }
-        } else {
-          warnings.push('No suitable project role found for team members');
-          console.warn('[Sync] No suitable project role found for team members');
+          if (addedToAny) addedCount++;
+        }
+        console.log(`[Sync] Added ${addedCount}/${resolvedAccountIds.length} developers to project roles: ${roleIds.join(', ')}`);
+        if (addedCount < resolvedAccountIds.length) {
+          warnings.push(`Only ${addedCount}/${resolvedAccountIds.length} developers added to project team`);
         }
       } catch (err) {
         warnings.push(`Could not set up project team: ${err.message}`);
@@ -367,27 +379,29 @@ router.post('/ai/sync-jira', async (req, res) => {
 
     for (let eIdx = 0; eIdx < approvedEpics.length; eIdx++) {
       const epic = approvedEpics[eIdx];
-      // Resolve epic-level assignee
-      const epicDevUsername = epicAssignmentMap[epic.id];
-      const epicAssigneeId = epicDevUsername ? accountIdCache[epicDevUsername] : null;
-      const createdEpic = await createEpic(projectKey, epic.title, epic.description || '', epicAssigneeId);
+      const createdEpic = await createEpic(projectKey, epic.title, epic.description || '');
       const epicKey = createdEpic.key;
-      console.log(`[Sync] Created epic: ${epicKey} - ${epic.title}${epicAssigneeId ? ` (assigned to ${epicDevUsername})` : ' (unassigned)'}`);
+      console.log(`[Sync] Created epic: ${epicKey} - ${epic.title}`);
+
+      // Assign developer to epic
+      const epicDevUsername = epicAssignmentMap[epic.id];
+      if (epicDevUsername && accountIdCache[epicDevUsername]) {
+        try { await assignIssue(epicKey, accountIdCache[epicDevUsername]); } catch (err) {
+          assignmentFailures++;
+          console.warn(`[Sync] Could not assign ${epicKey} to ${epicDevUsername}: ${err.message}`);
+        }
+      }
 
       const storyResults = [];
       const approvedStories = (epic.stories || []).filter((s) => s.status === 'approved');
 
       for (const story of approvedStories) {
-        // Resolve story-level assignee, fall back to epic-level
-        const storyDevUsername = storyAssignmentMap[story.id] || epicDevUsername;
-        const storyAssigneeId = storyDevUsername ? accountIdCache[storyDevUsername] : null;
-
         const createdStory = await createStory(
           projectKey, story.title,
           story.description || '', story.acceptanceCriteria || '',
-          epicKey, story.testCases || [], storyAssigneeId
+          epicKey, story.testCases || []
         );
-        console.log(`[Sync] Created story: ${createdStory.key} - ${story.title}${storyAssigneeId ? ` (assigned to ${storyDevUsername})` : ' (unassigned)'}`);
+        console.log(`[Sync] Created story: ${createdStory.key} - ${story.title}`);
 
         // Set story points
         const sp = parseInt(story.storyPoints || 5);
@@ -395,6 +409,15 @@ router.post('/ai/sync-jira', async (req, res) => {
           try { await updateStoryPoints(createdStory.key, sp); } catch (err) {
             pointsFailures++;
             console.warn(`[Sync] Could not set story points on ${createdStory.key}: ${err.message}`);
+          }
+        }
+
+        // Assign developer — story-level first, fall back to epic-level
+        const storyDevUsername = storyAssignmentMap[story.id] || epicDevUsername;
+        if (storyDevUsername && accountIdCache[storyDevUsername]) {
+          try { await assignIssue(createdStory.key, accountIdCache[storyDevUsername]); } catch (err) {
+            assignmentFailures++;
+            console.warn(`[Sync] Could not assign ${createdStory.key} to ${storyDevUsername}: ${err.message}`);
           }
         }
 

@@ -329,21 +329,21 @@ export async function transitionIssue(issueKey, transitionId) {
 
 // ─── Issue Creation ─────────────────────────────────────────────────────────
 
-export async function createEpic(projectKey, title, description, assigneeAccountId) {
-  const fields = {
-    project: { key: projectKey },
-    summary: title,
-    description: {
-      type: 'doc',
-      version: 1,
-      content: [{ type: 'paragraph', content: [{ type: 'text', text: description || title }] }],
-    },
-    issuetype: { name: 'Epic' },
-    assignee: assigneeAccountId ? { accountId: assigneeAccountId } : { accountId: null },
-  };
+export async function createEpic(projectKey, title, description) {
   const res = await jiraFetch('/rest/api/3/issue', {
     method: 'POST',
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({
+      fields: {
+        project: { key: projectKey },
+        summary: title,
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: description || title }] }],
+        },
+        issuetype: { name: 'Epic' },
+      },
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -352,7 +352,7 @@ export async function createEpic(projectKey, title, description, assigneeAccount
   return res.json();
 }
 
-export async function createStory(projectKey, title, description, acceptanceCriteria, epicKey, testCases, assigneeAccountId) {
+export async function createStory(projectKey, title, description, acceptanceCriteria, epicKey, testCases) {
   const fields = await discoverFields();
 
   // Build ADF content blocks for the issue description
@@ -413,7 +413,6 @@ export async function createStory(projectKey, title, description, acceptanceCrit
         content: contentBlocks,
       },
       issuetype: { name: 'Story' },
-      assignee: assigneeAccountId ? { accountId: assigneeAccountId } : { accountId: null },
     },
   };
 
