@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   createEpic, createStory, createSprint, startSprint, moveIssueToSprint,
-  assignIssue, updateStoryPoints, searchUser,
+  updateStoryPoints, searchUser,
   generateProjectKey, getMyself, createProject, getProjectBoards,
   getProjectRoles, addUserToProjectRole, inviteUsersToJira,
 } from '../services/jiraService.js';
@@ -367,29 +367,27 @@ router.post('/ai/sync-jira', async (req, res) => {
 
     for (let eIdx = 0; eIdx < approvedEpics.length; eIdx++) {
       const epic = approvedEpics[eIdx];
-      const createdEpic = await createEpic(projectKey, epic.title, epic.description || '');
-      const epicKey = createdEpic.key;
-      console.log(`[Sync] Created epic: ${epicKey} - ${epic.title}`);
-
-      // Assign developer to epic (use epic-level fallback if no story-level assignments)
+      // Resolve epic-level assignee
       const epicDevUsername = epicAssignmentMap[epic.id];
-      if (epicDevUsername && accountIdCache[epicDevUsername]) {
-        try { await assignIssue(epicKey, accountIdCache[epicDevUsername]); } catch (err) {
-          assignmentFailures++;
-          console.warn(`[Sync] Could not assign ${epicKey} to ${epicDevUsername}: ${err.message}`);
-        }
-      }
+      const epicAssigneeId = epicDevUsername ? accountIdCache[epicDevUsername] : null;
+      const createdEpic = await createEpic(projectKey, epic.title, epic.description || '', epicAssigneeId);
+      const epicKey = createdEpic.key;
+      console.log(`[Sync] Created epic: ${epicKey} - ${epic.title}${epicAssigneeId ? ` (assigned to ${epicDevUsername})` : ' (unassigned)'}`);
 
       const storyResults = [];
       const approvedStories = (epic.stories || []).filter((s) => s.status === 'approved');
 
       for (const story of approvedStories) {
+        // Resolve story-level assignee, fall back to epic-level
+        const storyDevUsername = storyAssignmentMap[story.id] || epicDevUsername;
+        const storyAssigneeId = storyDevUsername ? accountIdCache[storyDevUsername] : null;
+
         const createdStory = await createStory(
           projectKey, story.title,
           story.description || '', story.acceptanceCriteria || '',
-          epicKey, story.testCases || []
+          epicKey, story.testCases || [], storyAssigneeId
         );
-        console.log(`[Sync] Created story: ${createdStory.key} - ${story.title}`);
+        console.log(`[Sync] Created story: ${createdStory.key} - ${story.title}${storyAssigneeId ? ` (assigned to ${storyDevUsername})` : ' (unassigned)'}`);
 
         // Set story points
         const sp = parseInt(story.storyPoints || 5);
@@ -397,15 +395,6 @@ router.post('/ai/sync-jira', async (req, res) => {
           try { await updateStoryPoints(createdStory.key, sp); } catch (err) {
             pointsFailures++;
             console.warn(`[Sync] Could not set story points on ${createdStory.key}: ${err.message}`);
-          }
-        }
-
-        // Assign developer — story-level first, fall back to epic-level
-        const storyDevUsername = storyAssignmentMap[story.id] || epicDevUsername;
-        if (storyDevUsername && accountIdCache[storyDevUsername]) {
-          try { await assignIssue(createdStory.key, accountIdCache[storyDevUsername]); } catch (err) {
-            assignmentFailures++;
-            console.warn(`[Sync] Could not assign ${createdStory.key}: ${err.message}`);
           }
         }
 
@@ -460,15 +449,25 @@ router.post('/ai/sync-jira', async (req, res) => {
     }
 
     // Step 7: Start the first sprint so it appears on the board
+    // Wait briefly for Jira to finish indexing issues moved to the sprint
     if (sprints.length > 0) {
-      try {
-        const s1Start = new Date(startDate.getTime());
-        const s1End = new Date(startDate.getTime() + sprintMs);
-        await startSprint(sprints[0].id, s1Start.toISOString(), s1End.toISOString(), jiraBoardId);
-        console.log(`[Sync] Started sprint: ${sprints[0].name} (ID: ${sprints[0].id})`);
-      } catch (err) {
-        warnings.push(`Could not start sprint: ${err.message}`);
-        console.warn(`[Sync] Could not start sprint: ${err.message}`);
+      await new Promise(r => setTimeout(r, 2000));
+      const s1Start = new Date(startDate.getTime());
+      const s1End = new Date(startDate.getTime() + sprintMs);
+      let sprintStarted = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await startSprint(sprints[0].id, s1Start.toISOString(), s1End.toISOString(), jiraBoardId);
+          console.log(`[Sync] Started sprint: ${sprints[0].name} (ID: ${sprints[0].id}) on attempt ${attempt + 1}`);
+          sprintStarted = true;
+          break;
+        } catch (err) {
+          console.warn(`[Sync] Sprint start attempt ${attempt + 1} failed: ${err.message}`);
+          if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+      if (!sprintStarted) {
+        warnings.push('Could not start sprint — you may need to start it manually in Jira');
       }
     }
 

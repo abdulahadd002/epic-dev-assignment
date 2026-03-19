@@ -329,21 +329,21 @@ export async function transitionIssue(issueKey, transitionId) {
 
 // ─── Issue Creation ─────────────────────────────────────────────────────────
 
-export async function createEpic(projectKey, title, description) {
+export async function createEpic(projectKey, title, description, assigneeAccountId) {
+  const fields = {
+    project: { key: projectKey },
+    summary: title,
+    description: {
+      type: 'doc',
+      version: 1,
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: description || title }] }],
+    },
+    issuetype: { name: 'Epic' },
+    assignee: assigneeAccountId ? { accountId: assigneeAccountId } : { accountId: null },
+  };
   const res = await jiraFetch('/rest/api/3/issue', {
     method: 'POST',
-    body: JSON.stringify({
-      fields: {
-        project: { key: projectKey },
-        summary: title,
-        description: {
-          type: 'doc',
-          version: 1,
-          content: [{ type: 'paragraph', content: [{ type: 'text', text: description || title }] }],
-        },
-        issuetype: { name: 'Epic' },
-      },
-    }),
+    body: JSON.stringify({ fields }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -352,7 +352,7 @@ export async function createEpic(projectKey, title, description) {
   return res.json();
 }
 
-export async function createStory(projectKey, title, description, acceptanceCriteria, epicKey, testCases) {
+export async function createStory(projectKey, title, description, acceptanceCriteria, epicKey, testCases, assigneeAccountId) {
   const fields = await discoverFields();
 
   // Build ADF content blocks for the issue description
@@ -413,6 +413,7 @@ export async function createStory(projectKey, title, description, acceptanceCrit
         content: contentBlocks,
       },
       issuetype: { name: 'Story' },
+      assignee: assigneeAccountId ? { accountId: assigneeAccountId } : { accountId: null },
     },
   };
 
@@ -676,9 +677,10 @@ export async function addUserToProjectRole(projectKey, roleId, accountId) {
 }
 
 /**
- * Invite users to Jira Cloud via the user creation API.
- * Jira Cloud automatically sends email invitations to new users.
- * Existing users are silently skipped (409 = already exists).
+ * Invite users to Jira Cloud.
+ * Tries multiple approaches in order:
+ * 1. Bulk invite via POST /rest/api/3/user/bulk (Jira Cloud sends invitation emails)
+ * 2. Individual invite via POST /rest/api/3/user (requires admin, creates managed account)
  *
  * @param {string[]} emailAddresses - Array of email addresses to invite
  * @returns {Promise<Array>} Array of { email, accountId?, status, error? }
@@ -686,6 +688,24 @@ export async function addUserToProjectRole(projectKey, roleId, accountId) {
 export async function inviteUsersToJira(emailAddresses) {
   if (!emailAddresses || emailAddresses.length === 0) return [];
 
+  // Try bulk invite first (sends invitation emails — works on most Jira Cloud plans)
+  try {
+    const bulkRes = await jiraFetch('/rest/api/3/user/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ emailAddresses }),
+    });
+    if (bulkRes.ok) {
+      console.log(`[Jira] Bulk invite sent for ${emailAddresses.length} email(s)`);
+      // Bulk invite doesn't return accountIds — we'll re-search after a delay
+      return emailAddresses.map(email => ({ email, status: 'invited', displayName: email }));
+    }
+    const bulkErr = await bulkRes.json().catch(() => ({}));
+    console.warn(`[Jira] Bulk invite failed (${bulkRes.status}): ${parseJiraError(bulkErr, bulkRes.status)} — falling back to individual invites`);
+  } catch (err) {
+    console.warn(`[Jira] Bulk invite error: ${err.message} — falling back to individual invites`);
+  }
+
+  // Fallback: individual invite via user creation API (requires admin)
   const results = [];
   for (const email of emailAddresses) {
     try {
