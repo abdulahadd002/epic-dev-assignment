@@ -192,6 +192,7 @@ function WizardContent() {
         body: JSON.stringify({
           epics: epics.map((e) => ({ ...e, status: 'approved' })),
           assignments: flatAssignments,
+          dependencies: [],
           deadline: deadlineValue ? { value: deadlineValue, unit: deadlineUnit } : null,
           sprintCount: parseInt(sprintCount) || 1,
           projectName: name,

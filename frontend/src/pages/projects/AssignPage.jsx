@@ -683,6 +683,7 @@ export default function AssignPage() {
         <SyncButton
           epics={project.epics}
           assignments={assignments}
+          dependencies={project.dependencies}
           deadline={deadlineValue ? { value: deadlineValue, unit: deadlineUnit } : null}
           projectName={project.name}
           sprintCount={sprintCount}

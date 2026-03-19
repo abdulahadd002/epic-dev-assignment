@@ -9,25 +9,98 @@ import {
 const router = express.Router();
 
 /**
- * Distribute stories evenly across sprints by story points.
- * Uses a greedy bin-packing approach: assign each story to the sprint with the lowest load.
+ * Distribute stories across sprints respecting dependencies and epic cohesion.
+ *
+ * Rules (in priority order):
+ * 1. If story A blocks story B, A must be in the same or earlier sprint than B.
+ * 2. Stories from the same epic are kept together when possible.
+ * 3. Sprints are balanced by story points (greedy bin-packing).
+ *
+ * @param {Array} allStories - [{ storyId, key, storyPoints, epicIdx }]
+ * @param {number} sprintCount
+ * @param {Array} dependencies - [{ from: storyId, to: storyId }] (from blocks to)
  */
-function distributeStoriesAcrossSprints(allStories, sprintCount) {
+function distributeStoriesAcrossSprints(allStories, sprintCount, dependencies = []) {
   if (sprintCount <= 1) return [allStories];
 
   const bins = Array.from({ length: sprintCount }, () => ({ stories: [], points: 0 }));
 
-  // Sort stories by points descending for better distribution
-  const sorted = [...allStories].sort((a, b) => (b.storyPoints || 5) - (a.storyPoints || 5));
+  // Build dependency graph: blockerOf[storyId] = [storyIds it blocks]
+  // and blockedBy[storyId] = [storyIds that block it]
+  const blockedBy = {};   // storyId -> [blocker storyIds]
+  const storyIdSet = new Set(allStories.map(s => s.storyId));
+  for (const dep of dependencies) {
+    if (!storyIdSet.has(dep.from) || !storyIdSet.has(dep.to)) continue;
+    if (!blockedBy[dep.to]) blockedBy[dep.to] = [];
+    blockedBy[dep.to].push(dep.from);
+  }
 
-  for (const story of sorted) {
-    // Find the bin with the lowest total points
-    let minIdx = 0;
-    for (let i = 1; i < bins.length; i++) {
-      if (bins[i].points < bins[minIdx].points) minIdx = i;
+  // Track which sprint each story is assigned to
+  const sprintAssignment = {}; // storyId -> sprint index
+
+  // Group stories by epic for cohesion
+  const epicGroups = {};
+  for (const story of allStories) {
+    const key = story.epicIdx;
+    if (!epicGroups[key]) epicGroups[key] = [];
+    epicGroups[key].push(story);
+  }
+
+  // Sort epic groups by total points descending (larger groups placed first)
+  const sortedGroups = Object.values(epicGroups).sort((a, b) => {
+    const aPoints = a.reduce((s, st) => s + (st.storyPoints || 5), 0);
+    const bPoints = b.reduce((s, st) => s + (st.storyPoints || 5), 0);
+    return bPoints - aPoints;
+  });
+
+  // Place each epic group into the sprint with the lowest current load
+  for (const group of sortedGroups) {
+    // Find the minimum sprint index required by dependencies
+    let minSprintIdx = 0;
+    for (const story of group) {
+      const blockers = blockedBy[story.storyId] || [];
+      for (const blockerId of blockers) {
+        const blockerSprint = sprintAssignment[blockerId];
+        if (blockerSprint !== undefined && blockerSprint >= minSprintIdx) {
+          // Blocked story must be in same or later sprint as its blocker
+          minSprintIdx = blockerSprint;
+        }
+      }
     }
-    bins[minIdx].stories.push(story);
-    bins[minIdx].points += story.storyPoints || 5;
+
+    // Among eligible sprints (>= minSprintIdx), find the one with lowest points
+    let bestIdx = minSprintIdx;
+    for (let i = minSprintIdx; i < bins.length; i++) {
+      if (bins[i].points < bins[bestIdx].points) bestIdx = i;
+    }
+
+    // Place all stories in this group into the selected sprint
+    for (const story of group) {
+      bins[bestIdx].stories.push(story);
+      bins[bestIdx].points += story.storyPoints || 5;
+      sprintAssignment[story.storyId] = bestIdx;
+    }
+  }
+
+  // Second pass: verify all dependency constraints are met
+  // If a blocked story ended up before its blocker (due to epic grouping), move it later
+  for (const dep of dependencies) {
+    const fromSprint = sprintAssignment[dep.from];
+    const toSprint = sprintAssignment[dep.to];
+    if (fromSprint !== undefined && toSprint !== undefined && toSprint < fromSprint) {
+      // dep.to is blocked by dep.from, but dep.to is in an earlier sprint — swap it
+      const story = bins[toSprint].stories.find(s => s.storyId === dep.to);
+      if (story) {
+        // Remove from current sprint
+        bins[toSprint].stories = bins[toSprint].stories.filter(s => s.storyId !== dep.to);
+        bins[toSprint].points -= story.storyPoints || 5;
+        // Move to blocker's sprint (or later)
+        bins[fromSprint].stories.push(story);
+        bins[fromSprint].points += story.storyPoints || 5;
+        sprintAssignment[dep.to] = fromSprint;
+        console.log(`[Sync] Moved story ${dep.to} to sprint ${fromSprint + 1} (blocked by ${dep.from})`);
+      }
+    }
   }
 
   return bins.map(b => b.stories);
@@ -37,6 +110,7 @@ router.post('/ai/sync-jira', async (req, res) => {
   const {
     epics = [],
     assignments = [],
+    dependencies = [],
     deadline = null,
     projectName = 'Sprint',
     sprintCount: requestedSprintCount = 1,
@@ -269,7 +343,7 @@ router.post('/ai/sync-jira', async (req, res) => {
         }
 
         storyResults.push({ storyId: story.id, storyKey: createdStory.key });
-        allCreatedStories.push({ key: createdStory.key, storyPoints: sp, epicIdx: eIdx });
+        allCreatedStories.push({ storyId: story.id, key: createdStory.key, storyPoints: sp, epicIdx: eIdx });
       }
 
       results.push({ epicId: epic.id, epicKey, stories: storyResults });
@@ -297,7 +371,7 @@ router.post('/ai/sync-jira', async (req, res) => {
         }
       } else {
         // Multi-sprint: distribute stories by points
-        const storyBins = distributeStoriesAcrossSprints(allCreatedStories, sprints.length);
+        const storyBins = distributeStoriesAcrossSprints(allCreatedStories, sprints.length, dependencies);
 
         // Move story batches to their sprints
         for (let i = 0; i < sprints.length; i++) {

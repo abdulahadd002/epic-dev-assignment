@@ -10,7 +10,7 @@ const SYNC_STEPS = [
   { key: 'start', label: 'Starting sprint...', icon: Play, duration: 2000 },
 ];
 
-export default function SyncButton({ epics, assignments, deadline, projectName, sprintCount, developerJiraMap, onSyncComplete }) {
+export default function SyncButton({ epics, assignments, dependencies, deadline, projectName, sprintCount, developerJiraMap, onSyncComplete }) {
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
   const [createdKey, setCreatedKey] = useState(null);
@@ -44,6 +44,7 @@ export default function SyncButton({ epics, assignments, deadline, projectName, 
         body: JSON.stringify({
           epics,
           assignments,
+          dependencies: dependencies || [],
           deadline,
           projectName,
           sprintCount: sprintCount || 1,
