@@ -538,6 +538,11 @@ export async function updateStoryPoints(issueKey, points) {
 
 // ─── User Management ────────────────────────────────────────────────────────
 
+/**
+ * Search for a Jira user by query string.
+ * Jira's user search matches against displayName, emailAddress, and accountId.
+ * Returns active users sorted by relevance (exact email match first).
+ */
 export async function searchUser(query) {
   const res = await jiraFetch(`/rest/api/3/user/search?query=${encodeURIComponent(query)}&maxResults=10`);
   if (!res.ok) {
@@ -545,8 +550,23 @@ export async function searchUser(query) {
     throw new Error(parseJiraError(err, res.status));
   }
   const users = await res.json();
-  // Filter to active users only and return
-  return users.filter(u => u.active !== false);
+  // Filter to active users only
+  const activeUsers = users.filter(u => u.active !== false);
+
+  // Prioritize exact email matches — Jira's search is fuzzy and may return
+  // irrelevant users when searching by GitHub username
+  const lowerQuery = query.toLowerCase();
+  activeUsers.sort((a, b) => {
+    const aEmail = (a.emailAddress || '').toLowerCase() === lowerQuery ? -1 : 0;
+    const bEmail = (b.emailAddress || '').toLowerCase() === lowerQuery ? -1 : 0;
+    if (aEmail !== bEmail) return aEmail - bEmail;
+    // Then prefer exact displayName match
+    const aName = (a.displayName || '').toLowerCase() === lowerQuery ? -1 : 0;
+    const bName = (b.displayName || '').toLowerCase() === lowerQuery ? -1 : 0;
+    return aName - bName;
+  });
+
+  return activeUsers;
 }
 
 // ─── Project Management ─────────────────────────────────────────────────────

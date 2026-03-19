@@ -669,11 +669,21 @@ export default function AssignPage() {
               );
             })}
           </div>
-          {Object.values(jiraEmailMap).filter(Boolean).length === 0 && (
-            <p className="mt-2 text-[11px] text-amber-600">
-              Without Jira emails, developers will be looked up by GitHub username (may not match).
-            </p>
-          )}
+          {(() => {
+            const assignedDevs = [...new Set(assignments.map(a => a.assigned_developer).filter(Boolean))];
+            const unmapped = assignedDevs.filter(u => !jiraEmailMap[u]);
+            if (unmapped.length === 0) return null;
+            return (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-xs font-semibold text-amber-700 mb-1">
+                  {unmapped.length} developer{unmapped.length > 1 ? 's' : ''} missing Jira email
+                </p>
+                <p className="text-[11px] text-amber-600">
+                  {unmapped.join(', ')} — will be matched by GitHub username which may not find the correct Jira account. Add their Jira emails above for reliable assignment.
+                </p>
+              </div>
+            );
+          })()}
         </div>
       )}
 

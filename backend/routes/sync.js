@@ -236,28 +236,47 @@ router.post('/ai/sync-jira', async (req, res) => {
     }
 
     // Step 4: Resolve Jira accountIds from developer usernames
+    // Uses developerJiraMap (Jira email provided by user) or falls back to GitHub username search
     const allDevUsernames = new Set([...Object.values(storyAssignmentMap), ...Object.values(epicAssignmentMap)]);
     const accountIdCache = {};
     const unresolvedUsers = [];
+    const fuzzyMatches = [];
     for (const username of allDevUsernames) {
       if (!username) continue;
-      const jiraQuery = developerJiraMap[username] || username;
+      const jiraQuery = developerJiraMap[username] || null;
+      const hasExplicitMapping = !!jiraQuery;
+
       try {
-        const users = await searchUser(jiraQuery);
+        // Try the explicit Jira email/username first, then fall back to GitHub username
+        let users = [];
+        if (hasExplicitMapping) {
+          users = await searchUser(jiraQuery);
+        }
+        if (users.length === 0) {
+          // Fall back to GitHub username search
+          users = await searchUser(username);
+          if (users.length > 0 && !hasExplicitMapping) {
+            fuzzyMatches.push(`${username} → ${users[0].displayName} (matched by name, not email)`);
+          }
+        }
+
         if (users.length > 0) {
           accountIdCache[username] = users[0].accountId;
-          console.log(`[Sync] Resolved Jira user: ${username} → ${users[0].displayName}`);
+          console.log(`[Sync] Resolved Jira user: ${username} → ${users[0].displayName} (${hasExplicitMapping ? 'by email' : 'by name search'})`);
         } else {
           unresolvedUsers.push(username);
-          console.warn(`[Sync] No active Jira user found for "${jiraQuery}"`);
+          console.warn(`[Sync] No active Jira user found for "${username}"${hasExplicitMapping ? ` (tried: ${jiraQuery})` : ''}`);
         }
       } catch (err) {
         unresolvedUsers.push(username);
-        console.warn(`[Sync] Could not find Jira user for "${jiraQuery}": ${err.message}`);
+        console.warn(`[Sync] Could not find Jira user for "${username}": ${err.message}`);
       }
     }
     if (unresolvedUsers.length > 0) {
-      warnings.push(`Could not resolve Jira accounts for: ${unresolvedUsers.join(', ')}`);
+      warnings.push(`Could not resolve Jira accounts for: ${unresolvedUsers.join(', ')}. Add their Jira emails in the Team Mapping section.`);
+    }
+    if (fuzzyMatches.length > 0) {
+      warnings.push(`Fuzzy-matched developers (verify these are correct): ${fuzzyMatches.join('; ')}`);
     }
 
     // Step 4b: Add developers to the Jira project team (Member role)
