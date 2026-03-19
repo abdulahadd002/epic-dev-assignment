@@ -49,11 +49,19 @@ router.post('/analyze-developers', async (req, res) => {
     const devs = results.filter(r => !r.error).map(r => ({
       ...r,
       login: r.username,
-      avatar_url: r.avatar || `https://github.com/${r.username}.png`,
+      avatar_url: r.avatar || `https://avatars.githubusercontent.com/${r.username}`,
       primary_expertise: r.analysis?.expertise?.primary || 'Full Stack',
       experience_level: r.analysis?.experienceLevel?.level || 'Junior',
       top_skills: (r.analysis?.expertise?.technologies || []).slice(0, 6),
     }));
+
+    if (devs.length === 0 && devList.length > 0) {
+      return res.status(422).json({
+        success: false,
+        error: 'All developer analyses failed. Check GitHub usernames and try again.',
+        failedUsernames: results.filter(r => r.error).map(r => r.username)
+      });
+    }
 
     res.json({
       success: true,

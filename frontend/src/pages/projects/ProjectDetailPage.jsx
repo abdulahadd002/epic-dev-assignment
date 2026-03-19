@@ -1372,7 +1372,7 @@ function ProjectDetailPageInner() {
       </div>
 
       {/* Content: different view for synced vs non-synced */}
-      {(project.status === 'synced' || project.status === 'completed') && project.jiraSprintId ? (
+      {(project.status === 'synced' || project.status === 'completed') && (project.jiraSprintId || project.jiraProjectKey) ? (
         <SyncedProjectView project={project} />
       ) : (
         <LocalProjectView project={project} />

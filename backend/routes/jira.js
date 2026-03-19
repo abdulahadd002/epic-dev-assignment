@@ -26,6 +26,22 @@ router.get('/jira/test', async (req, res) => {
   }
 });
 
+router.get('/jira/health', async (req, res) => {
+  const health = { jira: false, domain: process.env.JIRA_DOMAIN || null, flask: false };
+  try {
+    const user = await testConnection();
+    health.jira = true;
+    health.user = user.displayName;
+  } catch (err) {
+    health.jiraError = err.message;
+  }
+  try {
+    const flaskRes = await fetch(`${process.env.FLASK_URL || 'http://localhost:5000'}/api/health`, { signal: AbortSignal.timeout(5000) });
+    health.flask = flaskRes.ok;
+  } catch { health.flask = false; }
+  res.json(health);
+});
+
 router.get('/jira/boards', async (req, res) => {
   try {
     const boards = await getBoards();
@@ -152,8 +168,7 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
     const doneIssues = [];
     const incompleteIssues = [];
     for (const issue of issues) {
-      const s = (issue.status || '').toLowerCase();
-      if (s.includes('done') || s.includes('closed') || s.includes('resolved')) {
+      if (isDoneCategory(issue.statusCategory || issue.status)) {
         doneIssues.push(issue);
       } else {
         incompleteIssues.push(issue);
@@ -188,9 +203,9 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
     let nextSprintStarted = null;
     if (nextSprint) {
       try {
-        const now = new Date();
-        const endDate = nextSprint.endDate || new Date(now.getTime() + 14 * 86400000).toISOString();
-        await startSprint(nextSprint.id, now.toISOString(), endDate, boardId);
+        const sprintStartDate = nextSprint.startDate || new Date().toISOString();
+        const sprintEndDate = nextSprint.endDate || new Date(new Date(sprintStartDate).getTime() + 14 * 86400000).toISOString();
+        await startSprint(nextSprint.id, sprintStartDate, sprintEndDate, boardId);
         nextSprintStarted = { id: nextSprint.id, name: nextSprint.name, state: 'active' };
         console.log(`[Complete] Started next sprint: ${nextSprint.name}`);
       } catch (err) {

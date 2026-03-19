@@ -170,6 +170,11 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
             <Loader2 className="h-4 w-4 animate-spin" />
             Syncing to Jira...
           </>
+        ) : status === 'error' ? (
+          <>
+            <AlertCircle className="h-4 w-4" />
+            Retry Sync
+          </>
         ) : (
           <>
             <Upload className="h-4 w-4" />

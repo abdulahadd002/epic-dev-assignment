@@ -156,21 +156,28 @@ router.post('/ai/sync-jira', async (req, res) => {
       throw new Error(`Could not create Jira project — all key variants for "${baseKey}" are taken`);
     }
 
-    // Discover the auto-created board for this project
+    // Discover the auto-created board for this project (retry with backoff)
     if (!jiraBoardId) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const boards = await getProjectBoards(projectKey);
-      // Prefer a Scrum board (supports sprints); fall back to any board
-      const scrumBoard = boards.find(b => b.type === 'scrum');
-      const selectedBoard = scrumBoard || boards[0];
-      if (selectedBoard) {
-        jiraBoardId = selectedBoard.id;
-        console.log(`[Sync] Found board: ${selectedBoard.name} (ID: ${jiraBoardId}, type: ${selectedBoard.type})`);
-        if (selectedBoard.type !== 'scrum') {
-          warnings.push(`Board "${selectedBoard.name}" is ${selectedBoard.type} type — sprints may not be supported`);
+      const delays = [2000, 4000, 8000];
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+        const boards = await getProjectBoards(projectKey);
+        const scrumBoard = boards.find(b => b.type === 'scrum');
+        const selectedBoard = scrumBoard || boards[0];
+        if (selectedBoard) {
+          jiraBoardId = selectedBoard.id;
+          console.log(`[Sync] Found board: ${selectedBoard.name} (ID: ${jiraBoardId}, type: ${selectedBoard.type}) on attempt ${attempt + 1}`);
+          if (selectedBoard.type !== 'scrum') {
+            warnings.push(`Board "${selectedBoard.name}" is ${selectedBoard.type} type — sprints may not be supported`);
+          }
+          break;
         }
-      } else {
-        warnings.push('No board found for project — sprint creation will be skipped');
+        if (attempt < delays.length - 1) {
+          console.warn(`[Sync] No board found on attempt ${attempt + 1}, retrying...`);
+        }
+      }
+      if (!jiraBoardId) {
+        warnings.push('No board found for project after 3 attempts — sprint creation will be skipped');
         console.warn('[Sync] No board found for project — sprint creation will be skipped');
       }
     }

@@ -18,6 +18,7 @@ export function useKanbanBoard(issues) {
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [moveError, setMoveError] = useState(null);
 
   const filtered = useMemo(() => {
     return (issues || []).filter((issue) => {
@@ -37,31 +38,50 @@ export function useKanbanBoard(issues) {
   }, [filtered]);
 
   const moveIssue = useCallback(async (issueKey, targetStatus) => {
+    setMoveError(null);
     try {
       const res = await fetch(`/api/jira/issue/${issueKey}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        setMoveError({ issueKey, message: `Failed to fetch transitions for ${issueKey}` });
+        return { success: false, error: 'Failed to fetch transitions' };
+      }
       const { transitions } = await res.json();
 
       const target = targetStatus.toLowerCase();
       const transition = transitions.find((t) => {
         const name = t.name.toLowerCase();
-        const to = (t.to || '').toLowerCase();
         if (target === 'done') return name.includes('done') || name.includes('close') || name.includes('resolv');
         if (target === 'in progress') return name.includes('progress') || name.includes('start');
         return name.includes('todo') || name.includes('to do') || name.includes('backlog') || name.includes('open');
       });
 
-      if (!transition) return;
+      if (!transition) {
+        const msg = `No matching Jira transition to "${targetStatus}" found`;
+        setMoveError({ issueKey, message: msg });
+        return { success: false, error: msg };
+      }
 
-      await fetch(`/api/jira/issue/${issueKey}`, {
+      const putRes = await fetch(`/api/jira/issue/${issueKey}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transitionId: transition.id }),
       });
+
+      if (!putRes.ok) {
+        const msg = `Jira transition failed for ${issueKey}`;
+        setMoveError({ issueKey, message: msg });
+        return { success: false, error: msg };
+      }
+
+      return { success: true };
     } catch (err) {
-      console.error('Failed to move issue:', err);
+      const msg = err.message || 'Failed to move issue';
+      setMoveError({ issueKey, message: msg });
+      return { success: false, error: msg };
     }
   }, []);
+
+  const clearMoveError = useCallback(() => setMoveError(null), []);
 
   const clearFilters = useCallback(() => {
     setSearch('');
@@ -93,6 +113,7 @@ export function useKanbanBoard(issues) {
     typeFilter, setTypeFilter,
     clearFilters,
     moveIssue,
+    moveError, clearMoveError,
     assignees, priorities, types,
   };
 }

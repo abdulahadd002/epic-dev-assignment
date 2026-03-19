@@ -151,14 +151,39 @@ async function fetchRepoCommits(owner, repo, author, maxCommits = 100) {
   return commits.slice(0, maxCommits);
 }
 
+async function checkRateLimit(response) {
+  const remaining = parseInt(response.headers.get('x-ratelimit-remaining') || '999', 10);
+  if (remaining <= 5) {
+    const resetTime = parseInt(response.headers.get('x-ratelimit-reset') || '0', 10) * 1000;
+    const waitMs = Math.max(0, resetTime - Date.now()) + 1000;
+    const cappedWait = Math.min(waitMs, 60000);
+    console.warn(`[GitHub] Rate limit low (${remaining} remaining), waiting ${Math.round(cappedWait / 1000)}s`);
+    await sleep(cappedWait);
+  } else if (remaining <= 20) {
+    await sleep(500);
+  }
+}
+
 async function fetchCommitDetails(owner, repo, sha) {
   const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/commits/${sha}`;
   const response = await fetch(url, { headers });
+
+  if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
+    const resetTime = parseInt(response.headers.get('x-ratelimit-reset') || '0', 10) * 1000;
+    const waitMs = Math.min(Math.max(0, resetTime - Date.now()) + 1000, 60000);
+    console.warn(`[GitHub] Rate limited, waiting ${Math.round(waitMs / 1000)}s`);
+    await sleep(waitMs);
+    const retry = await fetch(url, { headers });
+    if (!retry.ok) throw new Error(`Failed to fetch commit details: ${retry.statusText}`);
+    await checkRateLimit(retry);
+    return await retry.json();
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to fetch commit details: ${response.statusText}`);
   }
 
+  await checkRateLimit(response);
   return await response.json();
 }
 

@@ -193,7 +193,6 @@ export function WorkflowProvider({ children }) {
     // Regeneration actions
     regenerateEpic: async (epicIndex, userRequirements = '') => {
       const epic = state.generatedEpics[epicIndex];
-      console.log('[Regen Epic] User requirements:', userRequirements);
       const data = await safeFetchJson('/api/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -231,7 +230,6 @@ export function WorkflowProvider({ children }) {
     regenerateStory: async (epicIndex, storyIndex, userRequirements = '') => {
       const epic = state.generatedEpics[epicIndex];
       const story = epic.user_stories[storyIndex];
-      console.log('[Regen Story] User requirements:', userRequirements);
       const data = await safeFetchJson('/api/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -276,7 +274,6 @@ export function WorkflowProvider({ children }) {
     regenerateAC: async (epicIndex, storyIndex, userRequirements = '') => {
       const epic = state.generatedEpics[epicIndex];
       const story = epic.user_stories[storyIndex];
-      console.log('[Regen AC] User requirements:', userRequirements);
       const data = await safeFetchJson('/api/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -317,7 +314,6 @@ export function WorkflowProvider({ children }) {
       const epic = state.generatedEpics[epicIndex];
       const story = epic.user_stories[storyIndex];
       const tc = story.test_cases[tcIndex];
-      console.log('[Regen TC] User requirements:', userRequirements);
       const data = await safeFetchJson('/api/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

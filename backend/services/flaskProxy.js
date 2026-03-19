@@ -63,7 +63,8 @@ export async function classifyEpic(epicTitle, epicDescription) {
       body: JSON.stringify({
         epic_title: epicTitle,
         epic_description: epicDescription
-      })
+      }),
+      signal: AbortSignal.timeout(30000)
     });
 
     if (!response.ok) {

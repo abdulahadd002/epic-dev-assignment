@@ -4,9 +4,10 @@ import { AuthProvider } from './context/AuthContext'
 import { ProjectsProvider } from './hooks/useProjects'
 import { NotificationsProvider } from './hooks/useNotifications'
 import { AnimatePresence, motion } from 'framer-motion'
-import { createContext, useContext } from 'react'
+import { createContext, useContext, Component } from 'react'
 import { useTheme } from './hooks/useTheme'
 import NotificationToast from './components/shared/NotificationToast'
+import { AlertTriangle, RefreshCw } from 'lucide-react'
 
 // Layout & guard
 import Header from './components/layout/Header'
@@ -34,6 +35,48 @@ import Dashboard from './pages/jira/Dashboard'
 // Theme context (kept for existing workflow compatibility)
 const ThemeContext = createContext({ theme: 'light', toggleTheme: () => {}, isDark: false })
 export const useThemeContext = () => useContext(ThemeContext)
+
+// ─── Error Boundary ───────────────────────────────────────────────────────
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Application error:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-8">
+          <div className="max-w-md text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
+              <AlertTriangle className="h-7 w-7 text-red-600" />
+            </div>
+            <h1 className="mb-2 text-lg font-semibold text-gray-900">Something went wrong</h1>
+            <p className="mb-6 text-sm text-gray-500">
+              {this.state.error?.message || 'An unexpected error occurred.'}
+            </p>
+            <button
+              onClick={() => { this.setState({ hasError: false, error: null }); window.location.href = '/projects'; }}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Reload App
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // ─── Existing 4-step workflow (unchanged) ──────────────────────────────────
 const pageVariants = {
@@ -85,7 +128,7 @@ function WorkflowApp() {
 // ─── Sidebar layout for new pages ──────────────────────────────────────────
 function SidebarLayout({ children }) {
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: '#f9fafb' }}>
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
       <Sidebar />
       <div className="flex-1 overflow-auto" style={{ overflowAnchor: 'none' }}>
         {children}
@@ -100,6 +143,7 @@ function App() {
 
   return (
     <ThemeContext.Provider value={themeState}>
+      <ErrorBoundary>
       <AuthProvider>
         <ProjectsProvider>
         <NotificationsProvider>
@@ -156,6 +200,7 @@ function App() {
         </NotificationsProvider>
         </ProjectsProvider>
       </AuthProvider>
+      </ErrorBoundary>
     </ThemeContext.Provider>
   )
 }
