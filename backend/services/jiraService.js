@@ -219,7 +219,7 @@ export async function getProjectIssues(projectKey) {
 // Status categories that indicate "done" — case-insensitive
 const DONE_CATEGORIES = new Set(['done', 'complete', 'completed', 'closed', 'resolved']);
 
-function isDoneCategory(statusCategory) {
+export function isDoneCategory(statusCategory) {
   return DONE_CATEGORIES.has((statusCategory || '').toLowerCase());
 }
 
@@ -491,6 +491,18 @@ export async function startSprint(sprintId, startDate, endDate, boardId) {
   const res = await jiraFetch(`/rest/agile/1.0/sprint/${sprintId}`, {
     method: 'PUT',
     body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(parseJiraError(err, res.status));
+  }
+  return res.json();
+}
+
+export async function closeSprint(sprintId) {
+  const res = await jiraFetch(`/rest/agile/1.0/sprint/${sprintId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ state: 'closed' }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
