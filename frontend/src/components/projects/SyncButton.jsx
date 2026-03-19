@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Upload, Loader2, CheckCircle2, AlertCircle, AlertTriangle, Users, FolderPlus, GitBranch, UserPlus, Play } from 'lucide-react';
+import { Upload, Loader2, CheckCircle2, AlertCircle, AlertTriangle, Users, FolderPlus, GitBranch, UserPlus, Play, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SYNC_STEPS = [
-  { key: 'project', label: 'Creating Jira project...', icon: FolderPlus, duration: 3000 },
-  { key: 'team', label: 'Adding developers to team...', icon: UserPlus, duration: 4000 },
-  { key: 'epics', label: 'Creating epics & stories...', icon: GitBranch, duration: 6000 },
-  { key: 'sprints', label: 'Setting up sprints & assigning...', icon: Users, duration: 4000 },
+  { key: 'project', label: 'Creating Jira project...', icon: FolderPlus, duration: 2500 },
+  { key: 'invite', label: 'Inviting developers via email...', icon: Mail, duration: 3000 },
+  { key: 'team', label: 'Adding developers to team...', icon: UserPlus, duration: 3000 },
+  { key: 'epics', label: 'Creating epics & stories...', icon: GitBranch, duration: 5000 },
+  { key: 'sprints', label: 'Setting up sprints & assigning...', icon: Users, duration: 3500 },
   { key: 'start', label: 'Starting sprint...', icon: Play, duration: 2000 },
 ];
 
@@ -16,6 +17,7 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
   const [createdKey, setCreatedKey] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [syncWarnings, setSyncWarnings] = useState([]);
+  const [invitedDevs, setInvitedDevs] = useState([]);
 
   const approvedEpics = (epics || []).filter((e) => e.status === 'approved');
   const canSync = approvedEpics.length >= 2;
@@ -60,6 +62,7 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
       const data = await res.json();
       setCreatedKey(data.jiraProjectKey);
       setSyncWarnings(data.warnings || []);
+      setInvitedDevs(data.invitedDevelopers || []);
       setStatus('success');
       if (onSyncComplete) onSyncComplete(data.results, data.sprintId, data.jiraProjectKey, data.jiraBoardId);
     } catch (err) {
@@ -89,6 +92,20 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
             </div>
           ))}
         </div>
+        {invitedDevs.length > 0 && (
+          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-1">
+            <div className="flex items-center gap-1.5 text-blue-700 mb-1">
+              <Mail className="h-3.5 w-3.5" />
+              <span className="text-xs font-semibold">Developer invitations sent</span>
+            </div>
+            {invitedDevs.map((dev, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-xs text-blue-600 pl-5">
+                <Mail className="h-3 w-3 flex-shrink-0" />
+                <span>{dev}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {syncWarnings.length > 0 && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
             <div className="flex items-center gap-1.5 text-amber-700 mb-1">

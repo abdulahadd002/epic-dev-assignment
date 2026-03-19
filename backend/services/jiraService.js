@@ -667,3 +667,42 @@ export async function addUserToProjectRole(projectKey, roleId, accountId) {
   }
   return res.json();
 }
+
+/**
+ * Invite users to Jira Cloud via the user creation API.
+ * Jira Cloud automatically sends email invitations to new users.
+ * Existing users are silently skipped (409 = already exists).
+ *
+ * @param {string[]} emailAddresses - Array of email addresses to invite
+ * @returns {Promise<Array>} Array of { email, accountId?, status, error? }
+ */
+export async function inviteUsersToJira(emailAddresses) {
+  if (!emailAddresses || emailAddresses.length === 0) return [];
+
+  const results = [];
+  for (const email of emailAddresses) {
+    try {
+      const res = await jiraFetch('/rest/api/3/user', {
+        method: 'POST',
+        body: JSON.stringify({
+          emailAddress: email,
+          products: ['jira-software'],
+        }),
+      });
+
+      if (res.ok) {
+        const user = await res.json();
+        results.push({ email, accountId: user.accountId, status: 'invited', displayName: user.displayName || email });
+      } else if (res.status === 409) {
+        results.push({ email, status: 'already_exists' });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        results.push({ email, status: 'failed', error: parseJiraError(err, res.status) });
+      }
+    } catch (err) {
+      results.push({ email, status: 'failed', error: err.message });
+    }
+  }
+
+  return results;
+}

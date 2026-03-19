@@ -3,7 +3,7 @@ import {
   createEpic, createStory, createSprint, startSprint, moveIssueToSprint,
   assignIssue, updateStoryPoints, searchUser,
   generateProjectKey, getMyself, createProject, getProjectBoards,
-  getProjectRoles, addUserToProjectRole,
+  getProjectRoles, addUserToProjectRole, inviteUsersToJira,
 } from '../services/jiraService.js';
 
 const router = express.Router();
@@ -279,8 +279,49 @@ router.post('/ai/sync-jira', async (req, res) => {
         console.warn(`[Sync] Could not find Jira user for "${username}": ${err.message}`);
       }
     }
+    // Invite unresolved users who have Jira emails
+    const invitedUsers = [];
     if (unresolvedUsers.length > 0) {
-      warnings.push(`Could not resolve Jira accounts for: ${unresolvedUsers.join(', ')}. Add their Jira emails in the Team Mapping section.`);
+      const emailsToInvite = unresolvedUsers
+        .map(u => developerJiraMap[u])
+        .filter(Boolean);
+
+      if (emailsToInvite.length > 0) {
+        try {
+          const inviteResults = await inviteUsersToJira(emailsToInvite);
+          for (const result of inviteResults) {
+            const username = Object.entries(developerJiraMap).find(([, email]) => email === result.email)?.[0];
+            if (result.status === 'invited' && result.accountId) {
+              accountIdCache[username] = result.accountId;
+              invitedUsers.push(`${username} (${result.email})`);
+              // Remove from unresolved
+              const idx = unresolvedUsers.indexOf(username);
+              if (idx >= 0) unresolvedUsers.splice(idx, 1);
+              console.log(`[Sync] Invited ${result.email} to Jira → ${result.displayName}`);
+            } else if (result.status === 'already_exists') {
+              // User exists but wasn't found by search — retry search after invite
+              const retryUsers = await searchUser(result.email);
+              if (retryUsers.length > 0 && username) {
+                accountIdCache[username] = retryUsers[0].accountId;
+                const idx = unresolvedUsers.indexOf(username);
+                if (idx >= 0) unresolvedUsers.splice(idx, 1);
+                console.log(`[Sync] Found existing user on retry: ${username} → ${retryUsers[0].displayName}`);
+              }
+            } else if (result.status === 'failed') {
+              console.warn(`[Sync] Failed to invite ${result.email}: ${result.error}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[Sync] Invitation batch failed: ${err.message}`);
+        }
+      }
+
+      if (unresolvedUsers.length > 0) {
+        warnings.push(`Could not resolve Jira accounts for: ${unresolvedUsers.join(', ')}. Add their Jira emails in the Team Mapping section.`);
+      }
+    }
+    if (invitedUsers.length > 0) {
+      warnings.push(`Invited to Jira: ${invitedUsers.join(', ')} — they will receive email invitations.`);
     }
     if (fuzzyMatches.length > 0) {
       warnings.push(`Fuzzy-matched developers (verify these are correct): ${fuzzyMatches.join('; ')}`);
@@ -441,6 +482,7 @@ router.post('/ai/sync-jira', async (req, res) => {
       jiraProjectKey: projectKey,
       jiraBoardId: jiraBoardId,
       teamMembers: Object.keys(accountIdCache),
+      invitedDevelopers: invitedUsers,
       warnings,
     });
   } catch (err) {
