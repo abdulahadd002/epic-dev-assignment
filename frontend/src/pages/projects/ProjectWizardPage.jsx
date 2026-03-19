@@ -71,6 +71,9 @@ function transformAssignmentsForProject(assignments) {
   return (assignments || []).map((a) => ({
     epic_id: a.epic?.epic_id,
     epic_title: a.epic?.epic_title,
+    story_id: a.story?.story_id,
+    story_title: a.story?.story_title,
+    story_points: a.story?.story_points,
     assigned_developer: a.developer?.username,
     score: a.score,
     confidence: a.confidence,
@@ -240,6 +243,8 @@ function WizardContent() {
         jiraSprintId: data.sprintId,
         jiraProjectKey: data.jiraProjectKey,
         jiraBoardId: data.jiraBoardId,
+        sprintCount: parseInt(sprintCount) || 1,
+        sprints: data.sprints || [],
       });
 
       setSyncStatus('success');
@@ -274,6 +279,7 @@ function WizardContent() {
       epics,
       assignments: flatAssignments,
       analyzedDevelopers: developers,
+      deadline: deadlineValue ? { value: deadlineValue, unit: deadlineUnit } : null,
     });
 
     notify.success('Project Saved', `${name} saved locally`);

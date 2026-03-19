@@ -6,7 +6,7 @@ import { useAlerts } from '../../hooks/useAlerts';
 import { calculateHealthScore } from '../../utils/healthScore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, Columns3, Users, BookOpen, CheckCircle2, Clock, AlertTriangle,
+  ArrowLeft, ArrowRight, Columns3, Users, BookOpen, CheckCircle2, Clock, AlertTriangle,
   TrendingUp, TrendingDown, BarChart3, ChevronDown, ExternalLink, RefreshCw,
   Target, Layers, GitBranch, Activity, Calendar, Shield, Flame, Bug,
   ClipboardCheck, UserPlus, LayoutDashboard, FileText, GripVertical
@@ -405,7 +405,7 @@ function computeLocalHealth(project) {
   return { score: finalScore, level, factors };
 }
 
-function StoryDetail({ story }) {
+function StoryDetail({ story, assignment }) {
   const [expanded, setExpanded] = useState(false);
   const hasAC = !!story.acceptanceCriteria;
   const hasTC = story.testCases?.length > 0;
@@ -422,6 +422,9 @@ function StoryDetail({ story }) {
           {story.description && <div className="text-[11px] text-gray-400 truncate mt-0.5">{story.description}</div>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {assignment && (
+            <span className="text-[10px] font-medium text-teal-600 bg-teal-50 rounded px-1.5 py-0.5">@{assignment.assigned_developer}</span>
+          )}
           {hasAC && <ClipboardCheck className="w-3 h-3 text-emerald-400" title="Has acceptance criteria" />}
           {hasTC && <FileText className="w-3 h-3 text-blue-400" title="Has test cases" />}
           {story.storyPoints > 0 && <span className="text-[10px] font-mono bg-white rounded border border-gray-200 px-1.5 py-0.5 text-gray-500">{story.storyPoints} SP</span>}
@@ -515,7 +518,9 @@ function EpicsStories({ project }) {
           const storyCount = epic.stories?.length || 0;
           const epicPoints = epic.stories?.reduce((s, st) => s + (st.storyPoints || 0), 0) || 0;
           const isExpanded = expandedEpic === epic.id;
-          const assignment = (project.assignments || []).find(a => (a.epic_id || a.epicId) === epic.id);
+          // Show epic-level developer only for old-format assignments (no story_id)
+          const epicAssignments = (project.assignments || []).filter(a => (a.epic_id || a.epicId) === epic.id);
+          const assignment = epicAssignments.length > 0 && !epicAssignments[0].story_id ? epicAssignments[0] : null;
 
           return (
             <div key={epic.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -550,9 +555,12 @@ function EpicsStories({ project }) {
                   >
                     <div className="px-4 pb-3 border-t border-gray-100 pt-3 space-y-2">
                       {epic.description && <p className="text-xs text-gray-500 mb-2">{epic.description}</p>}
-                      {(epic.stories || []).map(story => (
-                        <StoryDetail key={story.id} story={story} />
-                      ))}
+                      {(epic.stories || []).map(story => {
+                        const storyAssignment = (project.assignments || []).find(a =>
+                          a.story_id ? a.story_id === story.id : false
+                        );
+                        return <StoryDetail key={story.id} story={story} assignment={storyAssignment} />;
+                      })}
                     </div>
                   </motion.div>
                 )}
@@ -624,7 +632,7 @@ function DeveloperTiles({ project }) {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-900 truncate">{dev.username}</div>
                 <div className="text-xs text-gray-400 truncate">{dev.primary_expertise || dev.analysis?.expertise?.primary || 'Developer'}</div>
-                <div className="text-[10px] text-teal-600 font-medium mt-0.5">{assigned.length} epic{assigned.length !== 1 ? 's' : ''} assigned</div>
+                <div className="text-[10px] text-teal-600 font-medium mt-0.5">{assigned.length} {assigned.some(a => a.story_id) ? (assigned.length === 1 ? 'story' : 'stories') : (assigned.length === 1 ? 'epic' : 'epics')} assigned</div>
               </div>
             </div>
           );
@@ -645,8 +653,42 @@ function LocalProjectView({ project }) {
 
   const localHealth = useMemo(() => computeLocalHealth(project), [project]);
 
+  const nextStep = (() => {
+    if (!project.status || project.status === 'epics-ready') {
+      return { message: 'Your epics are ready for review.', action: 'Verify Epics', link: `/projects/${project.id}/verify`, icon: ClipboardCheck };
+    }
+    if (project.status === 'stories-ready') {
+      return { message: 'Stories are ready \u2014 assign developers next.', action: 'Assign Developers', link: `/projects/${project.id}/assign`, icon: UserPlus };
+    }
+    if (project.status === 'assigned') {
+      return { message: 'Team assigned \u2014 sync to Jira to start sprints.', action: 'Sync to Jira', link: `/projects/${project.id}/assign`, icon: ExternalLink };
+    }
+    return null;
+  })();
+
   return (
     <div className="space-y-6">
+      {/* Next Steps Banner */}
+      {nextStep && (
+        <div className="rounded-xl border border-teal-200 bg-gradient-to-r from-teal-50 to-blue-50 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-teal-100 p-2">
+              <ArrowRight className="w-4 h-4 text-teal-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Next Step</h3>
+              <p className="text-sm text-gray-600">{nextStep.message}</p>
+            </div>
+          </div>
+          <Link
+            to={nextStep.link}
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 transition-all"
+          >
+            <nextStep.icon className="h-4 w-4" /> {nextStep.action}
+          </Link>
+        </div>
+      )}
+
       {/* Project Health + Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-5 md:col-span-1">
@@ -1161,8 +1203,8 @@ function ProjectDetailPageInner() {
                 <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-mono font-medium text-blue-600">{project.jiraProjectKey}</span>
               )}
             </div>
-            {project.description && (
-              <p className="mt-2 text-sm text-gray-500 max-w-2xl">{project.description}</p>
+            {(project.rawText || project.description) && (
+              <p className="mt-2 text-sm text-gray-500 max-w-2xl">{project.rawText || project.description}</p>
             )}
             <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
               <span>{project.epics?.length || 0} epics · {totalStories} stories · {totalPoints} points</span>
@@ -1195,8 +1237,15 @@ function ProjectDetailPageInner() {
               >
                 <UserPlus className="h-4 w-4" /> Assign Developers
               </Link>
+            ) : project.status === 'assigned' ? (
+              <Link
+                to={`/projects/${projectId}/assign`}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600 transition-all"
+              >
+                <ExternalLink className="h-4 w-4" /> Sync to Jira
+              </Link>
             ) : null}
-            {project.status === 'synced' && (
+            {(project.status === 'synced' || project.status === 'completed') && (
               <>
                 <Link
                   to="/dashboard"
