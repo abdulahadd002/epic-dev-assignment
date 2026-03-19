@@ -53,3 +53,12 @@ export function useBurndownData(sprintId) {
   );
   return { burndown: data || [], error, isLoading };
 }
+
+export function useBoardSprints(boardId) {
+  const { data, error, isLoading, mutate } = useSWR(
+    boardId ? `/api/jira/board/${boardId}/sprints` : null,
+    fetcher,
+    { dedupingInterval: 30000 }
+  );
+  return { sprints: data || [], error, isLoading, mutate };
+}
