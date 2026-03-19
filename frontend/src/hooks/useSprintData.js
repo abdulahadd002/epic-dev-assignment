@@ -31,7 +31,13 @@ export function useSprintIssues(sprintId) {
   const { data, error, isLoading, mutate } = useSWR(
     sprintId ? `/api/jira/sprint/${sprintId}/issues` : null,
     fetcher,
-    { refreshInterval: 30000 }
+    {
+      refreshInterval: 10000,
+      dedupingInterval: 5000,
+      errorRetryCount: 5,
+      errorRetryInterval: 3000,
+      revalidateOnFocus: true,
+    }
   );
   return { issues: data || [], error, isLoading, mutate };
 }
@@ -40,7 +46,13 @@ export function useProjectIssues(projectKey) {
   const { data, error, isLoading, mutate } = useSWR(
     projectKey ? `/api/jira/project/${projectKey}/issues` : null,
     fetcher,
-    { refreshInterval: 30000 }
+    {
+      refreshInterval: 10000,
+      dedupingInterval: 5000,
+      errorRetryCount: 5,
+      errorRetryInterval: 3000,
+      revalidateOnFocus: true,
+    }
   );
   return { issues: data || [], error, isLoading, mutate };
 }

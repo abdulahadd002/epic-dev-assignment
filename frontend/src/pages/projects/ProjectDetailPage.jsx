@@ -1,5 +1,5 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useProjects } from '../../hooks/useProjects';
 import { useSprintIssues, useProjectIssues, useBurndownData, useSprintDetails } from '../../hooks/useSprintData';
 import { useAlerts } from '../../hooks/useAlerts';
@@ -9,15 +9,14 @@ import {
   ArrowLeft, ArrowRight, Columns3, Users, BookOpen, CheckCircle2, Clock, AlertTriangle,
   TrendingUp, TrendingDown, BarChart3, ChevronDown, ExternalLink, RefreshCw,
   Target, Layers, GitBranch, Activity, Calendar, Shield, Flame, Bug,
-  ClipboardCheck, UserPlus, LayoutDashboard, FileText, GripVertical, Trophy
+  ClipboardCheck, UserPlus, LayoutDashboard, FileText, Trophy
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, AreaChart, Area
 } from 'recharts';
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, pointerWithin, rectIntersection } from '@dnd-kit/core';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useKanbanSync } from '../../hooks/useKanbanSync';
+import KanbanBoard from '../../components/kanban/KanbanBoard';
 import StoryDependencies from '../../components/projects/StoryDependencies';
 import SprintRetro from '../../components/projects/SprintRetro';
 import SprintCompletionBanner from '../../components/projects/SprintCompletionBanner';
@@ -86,264 +85,6 @@ function normalizeStatus(status) {
   return 'To Do';
 }
 
-const cardColorsByColumn = {
-  'To Do': {
-    bg: 'bg-gray-50',
-    border: 'border-gray-200 hover:border-gray-300',
-    key: 'text-gray-500',
-    grip: 'text-gray-300',
-    sp: 'bg-gray-100 text-gray-500',
-    accent: 'border-l-gray-400',
-  },
-  'In Progress': {
-    bg: 'bg-blue-50/50',
-    border: 'border-blue-200 hover:border-blue-300',
-    key: 'text-blue-600',
-    grip: 'text-blue-300',
-    sp: 'bg-blue-100 text-blue-600',
-    accent: 'border-l-blue-500',
-  },
-  'Done': {
-    bg: 'bg-emerald-50/50',
-    border: 'border-emerald-200 hover:border-emerald-300',
-    key: 'text-emerald-600',
-    grip: 'text-emerald-300',
-    sp: 'bg-emerald-100 text-emerald-600',
-    accent: 'border-l-emerald-500',
-  },
-};
-
-function DraggableCard({ issue, isDragOverlay, column }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: issue.key,
-    data: { issue },
-  });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.3 : 1,
-  };
-
-  const cc = cardColorsByColumn[column] || cardColorsByColumn['To Do'];
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={isDragOverlay ? {} : style}
-      {...attributes}
-      {...listeners}
-      className={`rounded-lg border border-l-[3px] p-2.5 transition-colors cursor-grab active:cursor-grabbing ${cc.accent} ${cc.bg} ${
-        isDragOverlay ? 'border-teal-400 shadow-lg shadow-teal-100 ring-2 ring-teal-200' : cc.border
-      }`}
-    >
-      <div className="flex items-center gap-1.5 mb-1">
-        <GripVertical className={`w-3 h-3 shrink-0 ${cc.grip}`} />
-        <span className={`text-[10px] font-mono ${cc.key}`}>{issue.key}</span>
-        {(issue.priority === 'Blocker' || issue.priority === 'Critical') && (
-          <Flame className="w-3 h-3 text-red-500" />
-        )}
-      </div>
-      <div className="text-xs text-gray-700 line-clamp-2">{issue.summary}</div>
-      <div className="flex items-center justify-between mt-1.5">
-        <span className="text-[10px] text-gray-400">{issue.assignee?.name || 'Unassigned'}</span>
-        {issue.storyPoints != null && (
-          <span className={`text-[10px] font-mono rounded px-1.5 py-0.5 ${cc.sp}`}>{issue.storyPoints}SP</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DroppableColumn({ id, items, colStyle }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
-
-  return (
-    <div ref={setNodeRef} className="min-h-[200px] flex flex-col">
-      <div className={`rounded-lg px-3 py-2 mb-2 flex items-center justify-between ${colStyle.header}`}>
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${colStyle.dot}`} />
-          <span className="text-xs font-semibold">{id}</span>
-        </div>
-        <span className="text-xs font-mono">{items.length}</span>
-      </div>
-      <div className={`space-y-1.5 max-h-[400px] overflow-y-auto rounded-lg p-1 transition-colors flex-1 ${
-        isOver ? 'bg-teal-50 ring-2 ring-teal-200 ring-inset' : ''
-      }`}>
-        {items.map(issue => (
-          <DraggableCard key={issue.key} issue={issue} column={id} />
-        ))}
-        {items.length === 0 && (
-          <div className={`h-full min-h-[160px] flex items-center justify-center text-xs rounded-lg border-2 border-dashed transition-colors ${
-            isOver ? 'border-teal-300 text-teal-500 bg-teal-50/50' : 'border-gray-200 text-gray-400'
-          }`}>
-            {isOver ? 'Drop here' : 'No items'}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function InteractiveKanban({ issues, mutateIssues }) {
-  // Track all in-flight optimistic moves: { issueKey -> targetColumn }
-  const [pendingMoves, setPendingMoves] = useState({});
-  const [activeIssue, setActiveIssue] = useState(null);
-  const [syncingKey, setSyncingKey] = useState(null);
-
-  // Filter out epics when stories exist — only show stories/tasks/subtasks on kanban
-  const storyIssues = useMemo(() => {
-    const all = issues || [];
-    const nonEpics = all.filter(i => (i.issueType || '').toLowerCase() !== 'epic');
-    return nonEpics.length > 0 ? nonEpics : all;
-  }, [issues]);
-
-  // Merge SWR issues with any pending optimistic moves
-  const mergedIssues = useMemo(() => {
-    if (Object.keys(pendingMoves).length === 0) return storyIssues;
-    return storyIssues.map(issue => {
-      if (pendingMoves[issue.key]) {
-        return { ...issue, status: pendingMoves[issue.key] };
-      }
-      return issue;
-    });
-  }, [storyIssues, pendingMoves]);
-
-  const columns = useMemo(() => {
-    const cols = { 'To Do': [], 'In Progress': [], 'Done': [] };
-    (mergedIssues || []).forEach(issue => {
-      cols[normalizeStatus(issue.status)].push(issue);
-    });
-    return cols;
-  }, [mergedIssues]);
-
-  const colStyles = {
-    'To Do': { header: 'text-gray-600 bg-gray-50', dot: 'bg-gray-400' },
-    'In Progress': { header: 'text-blue-600 bg-blue-50', dot: 'bg-blue-500' },
-    'Done': { header: 'text-emerald-600 bg-emerald-50', dot: 'bg-emerald-500' },
-  };
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
-
-  const findIssueByKey = useCallback((key) => {
-    return (mergedIssues || []).find(i => i.key === key);
-  }, [mergedIssues]);
-
-  const handleDragStart = useCallback((event) => {
-    setActiveIssue(findIssueByKey(event.active.id));
-  }, [findIssueByKey]);
-
-  const handleDragEnd = useCallback(async (event) => {
-    setActiveIssue(null);
-    const { active, over } = event;
-    if (!over) return;
-
-    const issueKey = active.id;
-    // Determine target column: over.id is either a column name or another card's key
-    let targetColumn = over.id;
-    if (!['To Do', 'In Progress', 'Done'].includes(targetColumn)) {
-      // Dropped onto a card — find which column that card is in
-      const overIssue = findIssueByKey(over.id);
-      if (overIssue) {
-        targetColumn = normalizeStatus(overIssue.status);
-      } else {
-        return;
-      }
-    }
-
-    const issue = findIssueByKey(issueKey);
-    if (!issue) return;
-
-    const currentColumn = normalizeStatus(issue.status);
-    if (currentColumn === targetColumn) return;
-
-    // Optimistic update — add to pending moves so card stays put
-    // even when SWR refreshes with old data
-    setPendingMoves(prev => ({ ...prev, [issueKey]: targetColumn }));
-    setSyncingKey(issueKey);
-
-    try {
-      // Fetch available transitions from Jira
-      const res = await fetch(`/api/jira/issue/${issueKey}`);
-      if (!res.ok) throw new Error('Failed to fetch transitions');
-      const { transitions } = await res.json();
-
-      const target = targetColumn.toLowerCase();
-      const transition = transitions.find((t) => {
-        const name = t.name.toLowerCase();
-        if (target === 'done') return name.includes('done') || name.includes('close') || name.includes('resolv');
-        if (target === 'in progress') return name.includes('progress') || name.includes('start');
-        return name.includes('todo') || name.includes('to do') || name.includes('backlog') || name.includes('open');
-      });
-
-      if (!transition) {
-        throw new Error(`No transition found for "${targetColumn}"`);
-      }
-
-      // Execute the transition in Jira
-      const putRes = await fetch(`/api/jira/issue/${issueKey}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transitionId: transition.id }),
-      });
-      if (!putRes.ok) throw new Error('Transition failed');
-
-      // Wait for Jira data to refresh, then clear the pending move
-      await mutateIssues();
-      setPendingMoves(prev => {
-        const next = { ...prev };
-        delete next[issueKey];
-        return next;
-      });
-    } catch (err) {
-      console.error('Failed to transition issue:', err);
-      // Revert — remove the pending move so card snaps back to real Jira state
-      setPendingMoves(prev => {
-        const next = { ...prev };
-        delete next[issueKey];
-        return next;
-      });
-    } finally {
-      setSyncingKey(null);
-    }
-  }, [findIssueByKey, mutateIssues]);
-
-  return (
-    <div>
-      {syncingKey && (
-        <div className="mb-3 flex items-center gap-2 text-xs text-teal-600 bg-teal-50 rounded-lg px-3 py-2 border border-teal-200">
-          <RefreshCw className="w-3 h-3 animate-spin" />
-          Syncing {syncingKey} to Jira...
-        </div>
-      )}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={(args) => {
-          const pointerCollisions = pointerWithin(args);
-          if (pointerCollisions.length > 0) return pointerCollisions;
-          return rectIntersection(args);
-        }}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="grid grid-cols-3 gap-3">
-          {Object.entries(columns).map(([name, items]) => (
-            <DroppableColumn
-              key={name}
-              id={name}
-              items={items}
-              colStyle={colStyles[name]}
-            />
-          ))}
-        </div>
-        <DragOverlay>
-          {activeIssue ? <DraggableCard issue={activeIssue} isDragOverlay column={normalizeStatus(activeIssue.status)} /> : null}
-        </DragOverlay>
-      </DndContext>
-    </div>
-  );
-}
 
 function computeLocalHealth(project) {
   const factors = [];
@@ -823,6 +564,7 @@ function LocalProjectView({ project }) {
 function SyncedProjectView({ project }) {
   const sprintId = project.jiraSprintId;
   const projectKey = project.jiraProjectKey;
+  const kanban = useKanbanSync(projectKey, sprintId);
   const { issues: projectIssues, isLoading: projectIssuesLoading, mutate: mutateProjectIssues } = useProjectIssues(projectKey);
   const { issues: sprintIssues, isLoading: sprintIssuesLoading, mutate: mutateSprintIssues } = useSprintIssues(sprintId);
   // Prefer project-level issues (gets all stories across all sprints); fall back to sprint issues
@@ -1188,29 +930,15 @@ function SyncedProjectView({ project }) {
       {/* Interactive Kanban — 2-way sync with Jira */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <Columns3 className="w-4 h-4 text-blue-500" /> Sprint Kanban
-            <span className="text-[10px] font-normal text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">Live — drag to move</span>
-          </h3>
-          <div className="flex items-center gap-2">
-            <button onClick={() => mutateIssues()} className="text-xs text-gray-400 hover:text-teal-600 flex items-center gap-1 transition-colors">
-              <RefreshCw className="w-3 h-3" /> Sync
-            </button>
-            <Link
-              to={`/projects/${project.id}/kanban`}
-              className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1 font-medium"
-            >
-              Full Board <ExternalLink className="w-3 h-3" />
-            </Link>
-          </div>
+          <div />
+          <Link
+            to={`/projects/${project.id}/kanban`}
+            className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1 font-medium"
+          >
+            Full Board <ExternalLink className="w-3 h-3" />
+          </Link>
         </div>
-        {issuesLoading ? (
-          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading sprint data...</div>
-        ) : issues && issues.length > 0 ? (
-          <InteractiveKanban issues={issues} mutateIssues={mutateIssues} />
-        ) : (
-          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No sprint issues found. Ensure Jira credentials are configured.</div>
-        )}
+        <KanbanBoard kanban={kanban} variant="mini" title="Sprint Kanban" />
       </div>
 
       {/* Story Points + Epics & Stories */}
